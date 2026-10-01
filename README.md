@@ -8,22 +8,73 @@ Uso pessoal, roda só em dev.
 
 ## Como rodar
 
+### Pré-requisitos
+
+- **Node.js 22 ou mais novo** ([nodejs.org](https://nodejs.org)). Confira com `node -v`. Com o
+  [nvm](https://github.com/nvm-sh/nvm), `nvm use` lê a versão do `.nvmrc`.
+- **Git**.
+- Uma conta gratuita na [Warcraft Logs](https://www.warcraftlogs.com) para gerar a chave da API.
+
+### 1. Clonar e instalar
+
 ```bash
-npm install
-cp .env.example .env.local   # e preencha as chaves
+git clone https://github.com/keter45/poachnomic3000.git
+cd poachnomic3000
+npm run setup
+```
+
+O `npm run setup` instala as dependências, confere a versão do Node e cria o `.env.local` a partir do
+`.env.example`. O `.env.local` fica fora do git, então suas chaves nunca são commitadas.
+
+### 2. Chave da Warcraft Logs
+
+A WCL é obrigatória para parses, presença no raid, horários e jogadores avulsos. Sem ela o app até abre, mas só
+com dados do Raider.io.
+
+1. Entre na sua conta da Warcraft Logs e abra https://www.warcraftlogs.com/api/clients.
+2. Clique em **Create Client** e preencha:
+   - **Name**: qualquer nome, por exemplo `poachnomic`.
+   - **Redirect URLs**: `http://localhost`. O app não usa login, então qualquer URL serve.
+   - **Public Client**: deixe **desmarcado**. Cliente público não tem secret e não funciona aqui.
+3. Salve. A página mostra o **Client ID** e o **Client Secret**.
+4. Abra o `.env.local` na raiz do projeto e cole os dois valores:
+
+   ```
+   WCL_CLIENT_ID=9a1b2c3d-...
+   WCL_CLIENT_SECRET=abc123...
+   ```
+
+   Sem aspas e sem espaços em volta do `=`.
+
+Trate o secret como uma senha: não cole em issues, prints ou chats. Se ele vazar, gere outro na mesma página.
+
+### 3. Chave do Raider.io (opcional)
+
+O Raider.io funciona sem chave. Uma chave (`RAIDERIO_API_KEY`) só aumenta o limite de requisições, o que deixa
+scans grandes um pouco mais rápidos. Ela é gerada no painel de aplicações da sua conta do Raider.io. Pode deixar
+o campo vazio.
+
+### 4. Rodar
+
+```bash
 npm run dev
 ```
 
-Abra http://localhost:3000, clique em **Escanear** e escolha os realms.
+Abra http://localhost:3000, clique em **Escanear**, escolha os realms e inicie. Os personagens aparecem conforme
+cada guilda termina. Se você mexer no `.env.local` com o servidor rodando, pare (`Ctrl+C`) e rode `npm run dev` de
+novo: as variáveis só são lidas na inicialização.
 
-### Chaves
+Os dados ficam em `data/poach.db` (SQLite, fora do git). Apagar a pasta `data/` zera o cache e começa do zero.
 
-- **Warcraft Logs** (obrigatória para parses, presença e horários): crie um client em
-  https://www.warcraftlogs.com/api/clients. Qualquer nome serve, e a redirect URL pode ser `http://localhost`.
-  Copie o *client id* e o *secret* para `WCL_CLIENT_ID` / `WCL_CLIENT_SECRET`.
-- **Raider.io** (opcional): `RAIDERIO_API_KEY` aumenta o rate limit.
+### Problemas comuns
 
-Os dados ficam em `data/poach.db` (SQLite, fora do git). Apagar o arquivo zera o cache.
+| Sintoma | Causa e solução |
+| --- | --- |
+| Faixa amarela "Falta a chave da Warcraft Logs" | `.env.local` sem `WCL_CLIENT_ID`/`WCL_CLIENT_SECRET`, ou servidor não reiniciado depois de editar. |
+| Scan falha com `HTTP 401` / `invalid_client` | ID ou secret errados, ou o client foi criado como **Public Client**. Crie outro com a opção desmarcada. |
+| `npm install` falha no `better-sqlite3` | Node abaixo do 22. Atualize o Node e rode `npm run setup` de novo. |
+| "Esperando a cota da Warcraft Logs" no scan | Normal: a WCL libera 3.600 pontos por hora. O scan continua sozinho quando a cota renova. |
+| Porta 3000 ocupada | `npm run dev -- -p 3001` e abra http://localhost:3001. |
 
 ## O que ele faz
 

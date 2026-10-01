@@ -263,6 +263,17 @@ function Main() {
         </div>
       )}
 
+      {meta && !meta.wclConfigured && (
+        <div role="alert" className="mx-4 mt-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm">
+          <strong className="font-semibold">Falta a chave da Warcraft Logs.</strong> Sem ela não há parses, presença, horários
+          nem jogadores avulsos. Crie um client em{" "}
+          <a href="https://www.warcraftlogs.com/api/clients" target="_blank" rel="noreferrer" className="font-medium underline">
+            warcraftlogs.com/api/clients
+          </a>
+          , cole o ID e o secret no <code>.env.local</code> e reinicie o <code>npm run dev</code>. Passo a passo no README.
+        </div>
+      )}
+
       <div className="flex flex-1 gap-4 p-4">
         <aside aria-label="Filtros" className="hidden w-64 shrink-0 lg:block">
           <div className="sticky top-20 max-h-[calc(100dvh-6rem)] overflow-y-auto pr-1">{filterPanel}</div>

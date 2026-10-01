@@ -1,0 +1,29 @@
+// Prepara o projeto depois de clonar: confere a versão do Node e cria o .env.local a partir do .env.example.
+import fs from "node:fs";
+
+const major = Number(process.versions.node.split(".")[0]);
+if (major < 22) {
+  console.error(`✗ Node ${process.versions.node} encontrado. Este projeto precisa do Node 22 ou mais novo (https://nodejs.org).`);
+  process.exit(1);
+}
+console.log(`✓ Node ${process.versions.node}`);
+
+if (fs.existsSync(".env.local")) {
+  console.log("✓ .env.local já existe (não mexi nele)");
+} else {
+  fs.copyFileSync(".env.example", ".env.local");
+  console.log("✓ .env.local criado a partir do .env.example");
+}
+
+const env = fs.readFileSync(".env.local", "utf8");
+const filled = (key) => new RegExp(`^${key}=\\S+`, "m").test(env);
+if (filled("WCL_CLIENT_ID") && filled("WCL_CLIENT_SECRET")) {
+  console.log("✓ Chaves da Warcraft Logs preenchidas");
+  console.log("\nPronto. Rode: npm run dev");
+} else {
+  console.log("\n→ Falta a chave da Warcraft Logs:");
+  console.log("  1. Entre em https://www.warcraftlogs.com/api/clients e clique em “Create Client”");
+  console.log("  2. Copie o Client ID e o Client Secret para WCL_CLIENT_ID e WCL_CLIENT_SECRET no .env.local");
+  console.log("  3. Rode: npm run dev");
+  console.log("\n  Passo a passo completo no README, seção “Chave da Warcraft Logs”.");
+}
