@@ -143,7 +143,7 @@ function CandidateRow({
           aria-pressed={Boolean(c.target)}
           aria-label={c.target ? `Remover ${c.name} dos alvos` : `Marcar ${c.name} como alvo`}
           onClick={() => onToggleTarget(row)}
-          className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text aria-pressed:text-warn"
+          className="grid h-10 w-10 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text aria-pressed:text-warn"
         >
           <Star size={16} fill={c.target ? "currentColor" : "none"} aria-hidden />
         </button>
@@ -152,7 +152,7 @@ function CandidateRow({
         <div className="flex items-center gap-2.5">
           {c.thumbnail ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={c.thumbnail} alt="" width={32} height={32} className="h-8 w-8 shrink-0 rounded-md bg-surface-2 outline outline-1 -outline-offset-1 outline-black/10" loading="lazy" />
+            <img src={c.thumbnail} alt="" width={32} height={32} className="h-8 w-8 shrink-0 rounded-md bg-surface-2 outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10" loading="lazy" />
           ) : (
             <span className="h-8 w-8 shrink-0 rounded-md bg-surface-2" aria-hidden />
           )}

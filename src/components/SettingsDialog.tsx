@@ -53,7 +53,7 @@ export function SettingsDialog({
             type="button"
             onClick={onClose}
             aria-label="Fechar"
-            className="grid h-9 w-9 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text"
+            className="grid h-10 w-10 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text"
           >
             <X size={18} aria-hidden />
           </button>
@@ -117,7 +117,7 @@ export function SettingsDialog({
                   type="button"
                   onClick={() => setNights(nights.filter((_, j) => j !== i))}
                   aria-label={`Remover ${DAY_SHORT[n.day]}`}
-                  className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-danger"
+                  className="grid h-10 w-10 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-danger"
                 >
                   <Trash2 size={15} aria-hidden />
                 </button>

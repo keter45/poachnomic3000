@@ -89,7 +89,7 @@ function Detail({
       <header className="flex items-start gap-3 border-b border-line p-4">
         {c.thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={c.thumbnail} alt="" width={56} height={56} className="h-14 w-14 rounded-lg bg-surface-2 outline outline-1 -outline-offset-1 outline-black/10" />
+          <img src={c.thumbnail} alt="" width={56} height={56} className="h-14 w-14 rounded-lg bg-surface-2 outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10" />
         ) : (
           <span className="h-14 w-14 rounded-lg bg-surface-2" aria-hidden />
         )}
@@ -113,7 +113,7 @@ function Detail({
           type="button"
           onClick={onClose}
           aria-label="Fechar"
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text"
         >
           <X size={18} aria-hidden />
         </button>

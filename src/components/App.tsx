@@ -368,7 +368,7 @@ function FiltersSheet({ open, onClose, children }: { open: boolean; onClose: () 
             type="button"
             onClick={onClose}
             aria-label="Fechar filtros"
-            className="grid h-9 w-9 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text"
+            className="grid h-10 w-10 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text"
           >
             <X size={18} aria-hidden />
           </button>

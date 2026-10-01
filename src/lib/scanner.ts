@@ -199,7 +199,12 @@ async function scanGuild(
   let mythicNights = 0;
   if (useWcl) {
     const since = Math.min(tier.tierStart, Date.now() - params.historyDays * DAY);
-    const list = await wcl.guildReports(g.name, realm, since);
+    // guilda inexistente na WCL vira "sem logs" (cai no roster do Raider.io)
+    const list = await wcl.guildReports(g.name, realm, since).catch((e) => {
+      if (e instanceof Stopped) throw e;
+      log("warn", `${g.name}: sem reports na WCL (${e instanceof Error ? e.message : e})`);
+      return [] as wcl.ReportSummary[];
+    });
     const raidReports = list.filter((r) => r.zoneId !== null && raidZones.has(r.zoneId));
     checkStop();
     const reports = await wcl.reportDetails(raidReports);
