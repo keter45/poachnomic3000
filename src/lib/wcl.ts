@@ -336,3 +336,103 @@ function summarize(raw: { hidden: boolean; zoneRankings: RawZoneRankings | null 
     encounters,
   };
 }
+
+// ---------- jogadores avulsos ----------
+
+export interface EncounterRankingEntry {
+  name: string;
+  class: string;
+  spec: string;
+  startTime: number;
+  report: { code: string } | null;
+  guild: { name: string } | null;
+  server: { name: string };
+}
+
+/** Uma página (100) do ranking de um boss mítico, filtrado pelo realm do personagem. */
+export async function encounterRankingsPage(
+  encounterId: number,
+  serverSlug: string,
+  metric: "dps" | "hps",
+  page: number,
+): Promise<{ hasMorePages: boolean; rankings: EncounterRankingEntry[] }> {
+  return cached(`wcl:encrank:${encounterId}:${serverSlug}:${metric}:${page}`, 6 * H, async () => {
+    const d = await gql<{ worldData: { encounter: { characterRankings: { hasMorePages: boolean; rankings: EncounterRankingEntry[] } | null } | null } }>(
+      `query($e: Int, $s: String, $m: CharacterRankingMetricType, $p: Int) { worldData { encounter(id: $e) { characterRankings(difficulty: 5, serverRegion: "us", serverSlug: $s, metric: $m, page: $p) } } }`,
+      { e: encounterId, s: serverSlug, m: metric, p: page },
+    );
+    const r = d.worldData.encounter?.characterRankings;
+    return {
+      hasMorePages: Boolean(r?.hasMorePages),
+      rankings: (r?.rankings ?? []).map((x) => ({
+        name: x.name,
+        class: x.class,
+        spec: x.spec,
+        startTime: x.startTime,
+        report: x.report ? { code: x.report.code } : null,
+        guild: x.guild ? { name: x.guild.name } : null,
+        server: { name: x.server.name },
+      })),
+    };
+  });
+}
+
+export interface ImportedReport {
+  code: string;
+  title: string;
+  visibility: string;
+  startTime: number;
+  endTime: number;
+  zoneId: number | null;
+  guild: { name: string; serverSlug: string } | null;
+  detail: ReportDetail;
+}
+
+/** Lê um report pelo código — inclusive não listado (quem tem o link pode ver). Privados não são acessíveis. */
+export async function importReport(code: string): Promise<ImportedReport | null> {
+  const d = await gql<{
+    reportData: {
+      report: {
+        title: string;
+        visibility: string;
+        startTime: number;
+        endTime: number;
+        zone: { id: number } | null;
+        guild: { name: string; server: { slug: string } } | null;
+        fights: { encounterID: number; kill: boolean | null; difficulty: number | null; friendlyPlayers: number[] | null }[] | null;
+        masterData: { actors: { id: number; name: string; server: string | null; subType: string }[] } | null;
+      } | null;
+    };
+  }>(
+    `query($c: String) { reportData { report(code: $c, allowUnlisted: true) { title visibility startTime endTime zone { id } guild { name server { slug } } fights(killType: Encounters) { encounterID kill difficulty friendlyPlayers } masterData { actors(type: "Player") { id name server subType } } } } }`,
+    { c: code },
+  );
+  const r = d.reportData.report;
+  if (!r) return null;
+  const fights = (r.fights ?? []).map((f) => ({
+    encounterID: f.encounterID,
+    kill: Boolean(f.kill),
+    difficulty: f.difficulty ?? 0,
+    friendlyPlayers: f.friendlyPlayers ?? [],
+  }));
+  const inFights = new Set(fights.flatMap((f) => f.friendlyPlayers));
+  return {
+    code,
+    title: r.title,
+    visibility: r.visibility,
+    startTime: r.startTime,
+    endTime: r.endTime,
+    zoneId: r.zone?.id ?? null,
+    guild: r.guild ? { name: r.guild.name, serverSlug: r.guild.server.slug } : null,
+    detail: {
+      code,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      zoneId: r.zone?.id ?? null,
+      fights,
+      players: (r.masterData?.actors ?? [])
+        .filter((a) => inFights.has(a.id) && a.server)
+        .map((a) => ({ id: a.id, name: a.name, server: a.server as string, cls: a.subType })),
+    },
+  };
+}

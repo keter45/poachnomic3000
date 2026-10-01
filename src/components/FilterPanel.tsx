@@ -88,6 +88,7 @@ export function FilterPanel({
           onChange={(v) => set("minProgress", v)}
         />
         <Range label="Score de M+" value={filters.minMplus} max={4000} step={100} onChange={(v) => set("minMplus", v)} />
+        <Range label="Histórico (tiers anteriores)" value={filters.minHistory} max={100} step={5} onChange={(v) => set("minHistory", v)} />
         <Range
           label="Compatível com nosso horário"
           value={filters.minSchedule}
@@ -100,6 +101,9 @@ export function FilterPanel({
 
       <fieldset className="space-y-1.5">
         <legend className="mb-2 font-medium">Mostrar só</legend>
+        <Check checked={filters.onlyCE} onChange={(v) => set("onlyCE", v)}>
+          Com Cutting Edge em algum tier anterior
+        </Check>
         <Check checked={filters.onlySocials} onChange={(v) => set("onlySocials", v)}>
           Com rede social ou Discord
         </Check>

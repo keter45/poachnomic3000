@@ -3,7 +3,7 @@
 import { ArrowDown, ArrowUp, Star } from "lucide-react";
 import { useState } from "react";
 import type { ScorePart } from "@/lib/score";
-import type { ScoreWeights } from "@/lib/types";
+import type { Candidate, ScoreWeights } from "@/lib/types";
 import { CLASS_COLOR, fmtInt, parseTier, tenureLabel } from "@/lib/wow";
 import type { Row, SortKey } from "./filters";
 
@@ -16,6 +16,7 @@ const COLS: { key: SortKey | null; label: string; hint?: string; align?: "right"
   { key: "logs", label: "Logs", hint: "Parse médio (melhor por boss) no mítico do tier", align: "right" },
   { key: "progress", label: "Míticos", hint: "Bosses míticos do tier mortos", align: "right" },
   { key: "mplus", label: "M+", hint: "Score de Mítica+ da season", align: "right" },
+  { key: "history", label: "Histórico", hint: "Progressão nos tiers anteriores (CE = Cutting Edge na conta)", align: "right" },
   { key: "schedule", label: "Horário", hint: "Compatibilidade com o nosso horário de raid", align: "right" },
   { key: "nights", label: "Presença", hint: "Noites míticas logadas com a guilda no tier", align: "right" },
   { key: "tenure", label: "Na guilda", hint: "Desde o primeiro boss com a guilda nos logs" },
@@ -45,7 +46,7 @@ export function CandidateTable({
   return (
     <div className="rounded-lg border border-line bg-surface">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1100px] border-collapse text-sm">
+        <table className="w-full min-w-[1180px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs text-muted">
               <th scope="col" className="w-10 px-2 py-2">
@@ -175,14 +176,28 @@ function CandidateRow({
         </div>
       </td>
       <td className="px-2 py-1.5">
-        <div className="max-w-[13rem] truncate font-medium" title={c.guildName}>
-          {c.guildName}
-        </div>
-        <div className="text-xs text-muted">
-          {c.guildProgress ?? "?"}/{totalBosses}M · #{row.guildPos} de {row.guildSize}
-          {!c.inRoster && <span className="ml-1.5 rounded bg-accent-soft px-1 py-px text-[11px] font-medium text-text">de fora</span>}
-          {c.recruiting && <span className="ml-1.5 rounded bg-accent-soft px-1 py-px text-[11px] font-medium text-text">procurando</span>}
-        </div>
+        {c.kind === "guild" ? (
+          <>
+            <div className="max-w-[13rem] truncate font-medium" title={c.guildName ?? undefined}>
+              {c.guildName}
+            </div>
+            <div className="text-xs text-muted">
+              {c.guildProgress ?? "?"}/{totalBosses}M · #{row.guildPos} de {row.guildSize}
+              {!c.inRoster && <Badge>de fora</Badge>}
+              {c.recruiting && <Badge>procurando</Badge>}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-1.5 font-medium">
+              Avulso
+              {c.recruiting && <Badge>procurando</Badge>}
+            </div>
+            <div className="max-w-[13rem] truncate text-xs text-muted" title={standaloneWhere(c)}>
+              {standaloneWhere(c)}
+            </div>
+          </>
+        )}
       </td>
       <td className="px-2 py-1.5 text-right">
         <div className="text-base font-semibold tabular">{s.total ?? "—"}</div>
@@ -200,9 +215,15 @@ function CandidateRow({
         <span className="text-muted">/{totalBosses}</span>
       </td>
       <td className="px-2 py-1.5 text-right tabular">{fmtInt(c.mplusScore)}</td>
+      <td className="px-2 py-1.5 text-right tabular" title={historyTitle(c)}>
+        <div>{s.parts.history ?? "—"}</div>
+        {ceCount(c) > 0 && <div className="text-[11px] text-muted">{ceCount(c)}× CE</div>}
+      </td>
       <td className="px-2 py-1.5 text-right tabular">{s.parts.schedule === null ? "—" : `${s.parts.schedule}%`}</td>
       <td className="px-2 py-1.5 text-right tabular">
-        {c.guildLogsSource === "wcl" && c.guildMythicNights ? (
+        {c.kind === "standalone" ? (
+          <span className="text-xs text-muted">—</span>
+        ) : c.guildLogsSource === "wcl" && c.guildMythicNights ? (
           <>
             {c.nights}
             <span className="text-muted">/{c.guildMythicNights}</span>
@@ -231,13 +252,35 @@ function CandidateRow({
   );
 }
 
-const PART_ORDER: ScorePart[] = ["logs", "progress", "mplus", "schedule"];
+const PART_ORDER: ScorePart[] = ["logs", "progress", "history", "mplus", "schedule"];
 const PART_SHADE: Record<ScorePart, string> = {
   logs: "100%",
-  progress: "75%",
-  mplus: "50%",
+  progress: "80%",
+  history: "62%",
+  mplus: "45%",
   schedule: "30%",
 };
+
+function Badge({ children }: { children: React.ReactNode }) {
+  return <span className="ml-1.5 rounded bg-accent-soft px-1 py-px text-[11px] font-medium text-text">{children}</span>;
+}
+
+const ceCount = (c: Candidate) => c.history?.filter((h) => h.ce).length ?? 0;
+
+function historyTitle(c: Candidate) {
+  if (!c.history?.length) return "Sem histórico";
+  return c.history
+    .map((h) => `${h.name}: ${h.mythic}/${h.total}M${h.ce ? " · CE" : h.aotc ? " · AOTC" : ""}`)
+    .join("\n");
+}
+
+/** "guilda X · log importado" — contexto de um avulso. */
+export function standaloneWhere(c: Candidate) {
+  const parts: string[] = [c.rioGuild ? `guilda: ${c.rioGuild.name}` : "sem guilda"];
+  if (c.standalone?.sources.includes("report")) parts.push("log importado");
+  else if (c.standalone?.sources.includes("roster")) parts.push("guilda não mítica");
+  return parts.join(" · ");
+}
 
 /** Barra com a contribuição de cada parte (largura = peso × valor). */
 function ScoreBar({ parts, weights }: { parts: Record<ScorePart, number | null>; weights: ScoreWeights }) {

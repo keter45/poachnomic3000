@@ -1,5 +1,5 @@
 import { nightsToSlots, scheduleCompat, toLocal } from "./schedule";
-import type { Candidate, ScoreWeights, Settings, TierInfo } from "./types";
+import type { Candidate, RaidHistory, ScoreWeights, Settings, TierInfo } from "./types";
 
 export type ScorePart = keyof ScoreWeights;
 
@@ -31,12 +31,30 @@ export function mplusNorm(score: number | null, cutoffs: TierInfo["cutoffs"]): n
   return 100;
 }
 
+/**
+ * Potencial pelo histórico (0–100): Cutting Edge vale 100; senão a fração de bosses míticos deste
+ * personagem (até 90); AOTC sem mítico vale 30. Tiers mais recentes pesam mais (4, 3, 2, 1).
+ */
+export function historyScore(history: RaidHistory[] | null): number | null {
+  if (!history?.length) return null;
+  let sum = 0;
+  let wsum = 0;
+  history.forEach((r, i) => {
+    const w = Math.max(1, 4 - i);
+    const value = r.ce ? 100 : Math.max(r.total ? (r.mythic / r.total) * 90 : 0, r.aotc ? 30 : 0);
+    sum += value * w;
+    wsum += w;
+  });
+  return Math.round(sum / wsum);
+}
+
 export function scoreCandidate(c: Candidate, settings: Settings, tier: TierInfo | null): ScoreResult {
   const parts: Record<ScorePart, number | null> = {
     logs: c.wcl && !c.wcl.hidden && c.wcl.bestAvg !== null ? Math.round(c.wcl.bestAvg) : null,
     progress: c.mythicKilled !== null && tier ? Math.round((c.mythicKilled / tier.totalBosses) * 100) : null,
     mplus: mplusNorm(c.mplusScore, tier?.cutoffs ?? null),
     schedule: c.activity ? scheduleCompat(toLocal(c.activity, settings.tzOffset), nightsToSlots(settings.ourNights)) : null,
+    history: historyScore(c.history),
   };
   const w = settings.weights;
   let sum = 0;
@@ -56,4 +74,5 @@ export const PART_LABEL: Record<ScorePart, string> = {
   progress: "Progressão",
   mplus: "Mítica+",
   schedule: "Horário",
+  history: "Histórico",
 };

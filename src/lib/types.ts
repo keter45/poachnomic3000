@@ -8,6 +8,8 @@ export interface TierInfo {
   wclZoneId: number | null;
   /** encounters da zone WCL que pertencem a este raid (a zone pode incluir bosses de outro raid) */
   wclEncounterIds: number[];
+  /** raids de tier anteriores (mais recente primeiro), usados no histórico de progressão */
+  historyRaids: { slug: string; name: string; total: number }[];
   seasonSlug: string | null;
   cutoffs: { p999: number; p990: number; p900: number; p750: number; p600: number } | null;
   updatedAt: number;
@@ -27,6 +29,9 @@ export interface ScanParams {
   minAttendance: number;
   fetchRankings: boolean;
   fetchSocials: boolean;
+  /** procurar jogadores que fazem mítico fora de um raid team (pugs) */
+  findStandalone: boolean;
+  maxStandalone: number;
 }
 
 export const DEFAULT_SCAN: ScanParams = {
@@ -38,6 +43,8 @@ export const DEFAULT_SCAN: ScanParams = {
   minAttendance: 0.25,
   fetchRankings: true,
   fetchSocials: true,
+  findStandalone: true,
+  maxStandalone: 300,
 };
 
 export type ScanStatus = "idle" | "running" | "stopping" | "done" | "stopped" | "error";
@@ -81,9 +88,31 @@ export interface WclSummary {
   encounters: { id: number; name: string; best: number | null; median: number | null; kills: number }[];
 }
 
-/** Uma linha da lista principal: personagem + guilda onde ele raida. */
+/** Progressão em um raid de tier anterior. mythic é deste personagem; aotc/ce vêm da conta (conquistas). */
+export interface RaidHistory {
+  slug: string;
+  name: string;
+  total: number;
+  mythic: number;
+  heroic: number;
+  aotc: string | null;
+  ce: string | null;
+}
+
+export interface StandaloneInfo {
+  /** de onde veio: "wcl" (rankings por boss), "roster" (guilda não mítica no Raider.io), "report" (log importado) */
+  sources: string[];
+  /** guilda dele nos kills ranqueados (WCL) ou guilda do log importado; "sem guilda" quando matou sem guilda */
+  logGuilds: string[];
+  bossesKilled: number;
+  lastKill: number | null;
+  reports: string[];
+}
+
+/** Uma linha da lista principal: personagem + guilda onde ele raida (ou avulso). */
 export interface Candidate {
   id: string;
+  kind: "guild" | "standalone";
   name: string;
   realmSlug: string;
   realmName: string | null;
@@ -103,10 +132,12 @@ export interface Candidate {
   recruiting: boolean;
   /** guilda in-game segundo o Raider.io */
   rioGuild: { name: string; realm: string } | null;
-  // --- vínculo com a guilda onde raida ---
-  guildId: string;
-  guildName: string;
-  guildRealm: string;
+  history: RaidHistory[] | null;
+  standalone: StandaloneInfo | null;
+  // --- vínculo com a guilda onde raida (null para avulsos) ---
+  guildId: string | null;
+  guildName: string | null;
+  guildRealm: string | null;
   guildProgress: number | null;
   guildRegionRank: number | null;
   guildSchedule: number[] | null;
@@ -134,6 +165,7 @@ export interface ScoreWeights {
   progress: number;
   mplus: number;
   schedule: number;
+  history: number;
 }
 
 export interface RaidNight {
@@ -150,7 +182,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  weights: { logs: 40, progress: 25, mplus: 20, schedule: 15 },
+  weights: { logs: 35, progress: 25, mplus: 15, schedule: 10, history: 15 },
   // padrão: Ter/Qua/Qui 20h–00h
   ourNights: [2, 3, 4].map((day) => ({ day, from: 20, to: 24 })),
   tzOffset: -3,

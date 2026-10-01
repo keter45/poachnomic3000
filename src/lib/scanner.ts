@@ -1,7 +1,7 @@
 import { db, getSetting, setSetting } from "./db";
 import * as rio from "./raiderio";
 import { addPoint, addSpan, emptyWeek } from "./schedule";
-import type { ScanLogLine, ScanParams, ScanState, TierInfo } from "./types";
+import { DEFAULT_SCAN, type RaidHistory, type ScanLogLine, type ScanParams, type ScanState, type TierInfo } from "./types";
 import * as wcl from "./wcl";
 
 const DAY = 24 * 3600_000;
@@ -96,9 +96,13 @@ export function stopScan() {
 
 export async function loadTier(): Promise<TierInfo> {
   const existing = getSetting<TierInfo | null>("tier", null);
-  if (existing?.wclEncounterIds && Date.now() - existing.updatedAt < 6 * 3600_000) return existing;
+  if (existing?.historyRaids && Date.now() - existing.updatedAt < 6 * 3600_000) return existing;
   const [raid] = await rio.currentRaids("us");
   if (!raid) throw new Error("Nenhum raid ativo encontrado no Raider.io");
+  const history = (await rio.tierRaids("us"))
+    .filter((r) => r.slug !== raid.slug && Date.parse(r.starts.us) < Date.parse(raid.starts.us))
+    .slice(0, 4)
+    .map((r) => ({ slug: r.slug, name: r.name, total: r.encounters.length }));
   const season = await rio.currentSeason("us");
   const zone = wcl.wclConfigured() ? await wcl.zoneForRaid(raid.name) : null;
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -110,6 +114,7 @@ export async function loadTier(): Promise<TierInfo> {
     tierStart: Date.parse(raid.starts.us),
     wclZoneId: zone?.id ?? null,
     wclEncounterIds: zone?.encounters.filter((e) => raidBosses.has(norm(e.name))).map((e) => e.id) ?? [],
+    historyRaids: history,
     seasonSlug: season?.slug ?? null,
     cutoffs: season ? await rio.mplusCutoffs(season.slug, "us") : null,
     updatedAt: Date.now(),
@@ -172,6 +177,12 @@ async function run(params: ScanParams) {
       log("error", `${g.name}: ${e instanceof Error ? e.message : e}`);
     }
     job.state.guildsDone++;
+  }
+
+  if (params.findStandalone) {
+    const scanned = new Set(guilds.map((e) => e.guild.name.toLowerCase()));
+    const mythicRanked = new Set(entries.map((e) => e.guild.name.toLowerCase()));
+    await scanStandalone(tier, params, { scanned, mythicRanked }, useWcl, serverMap);
   }
 }
 
@@ -334,24 +345,43 @@ async function scanGuild(
     }
   })();
 
-  // ---- personagens ----
+  checkStop();
+  await enrichCharacters(team, tier, params, useWcl, rosterById);
+}
+
+interface CharKey {
+  id: string;
+  name: string;
+  realmSlug: string;
+}
+
+/** Perfil (Raider.io), parses (WCL) e redes sociais de uma lista de personagens, gravando em `characters`. */
+async function enrichCharacters(
+  chars: CharKey[],
+  tier: TierInfo,
+  params: ScanParams,
+  useWcl: boolean,
+  rosterById: Map<string, rio.RioRosterMember> = new Map(),
+  onEach?: () => void,
+) {
+  const curve = [tier.raidSlug, ...tier.historyRaids.map((r) => r.slug)];
   // perfil do Raider.io primeiro: o role decide a métrica dos parses (healer = HPS)
   const profiles = new Map<string, rio.RioCharacterProfile | null>();
-  for (const s of team) {
+  for (const s of chars) {
     checkStop();
-    profiles.set(s.id, await rio.characterProfile("us", s.realmSlug, s.name).catch(() => null));
+    profiles.set(s.id, await rio.characterProfile("us", s.realmSlug, s.name, curve).catch(() => null));
   }
-  const roleOf = (s: MemberStats) =>
+  const roleOf = (s: CharKey) =>
     profiles.get(s.id)?.active_spec_role ?? rosterById.get(s.id)?.character.spec?.role?.toUpperCase() ?? null;
   const rankings =
     useWcl && params.fetchRankings && tier.wclZoneId
       ? await wcl.characterRankings(
-          team.map((s) => ({ name: s.name, serverSlug: s.realmSlug, metric: roleOf(s) === "HEALING" ? "hps" : "dps" })),
+          chars.map((s) => ({ name: s.name, serverSlug: s.realmSlug, metric: roleOf(s) === "HEALING" ? "hps" : "dps" })),
           tier.wclZoneId,
         )
       : new Map<string, wcl.WclRankingSummary>();
 
-  for (const s of team) {
+  for (const s of chars) {
     checkStop();
     try {
       await upsertCharacter(
@@ -366,11 +396,31 @@ async function scanGuild(
       log("warn", `${s.name}-${s.realmSlug}: ${e instanceof Error ? e.message : e}`);
     }
     job.state.charsDone++;
+    onEach?.();
   }
 }
 
+/** Progressão nos tiers anteriores: kills míticos deste personagem + AOTC/CE da conta. */
+function buildHistory(tier: TierInfo, profile: rio.RioCharacterProfile | null): RaidHistory[] | null {
+  if (!profile?.raid_progression) return null;
+  const curve = new Map((profile.raid_achievement_curve ?? []).map((c) => [c.raid, c]));
+  return tier.historyRaids.map((r) => {
+    const p = profile.raid_progression?.[r.slug];
+    const c = curve.get(r.slug);
+    return {
+      slug: r.slug,
+      name: r.name,
+      total: p?.total_bosses ?? r.total,
+      mythic: p?.mythic_bosses_killed ?? 0,
+      heroic: p?.heroic_bosses_killed ?? 0,
+      aotc: c?.aotc ?? null,
+      ce: c?.cutting_edge ?? null,
+    };
+  });
+}
+
 async function upsertCharacter(
-  s: MemberStats,
+  s: CharKey,
   tier: TierInfo,
   params: ScanParams,
   profile: rio.RioCharacterProfile | null,
@@ -395,8 +445,8 @@ async function upsertCharacter(
 
   d.prepare(
     `insert into characters(id, name, realm_slug, realm_name, region, class, spec, role, ilvl, thumbnail, profile_url, rio_guild, mplus_score,
-       rio_mythic_killed, wcl_hidden, wcl, socials, main_character, bio, recruiting, seen_samples, updated_at)
-     values(@id, @name, @realm, @realmName, 'us', @class, @spec, @role, @ilvl, @thumb, @url, @guild, @mplus, @killed, @hidden, @wcl, @socials, @main, @bio, @recruiting, @samples, @now)
+       rio_mythic_killed, wcl_hidden, wcl, socials, main_character, bio, recruiting, seen_samples, history, updated_at)
+     values(@id, @name, @realm, @realmName, 'us', @class, @spec, @role, @ilvl, @thumb, @url, @guild, @mplus, @killed, @hidden, @wcl, @socials, @main, @bio, @recruiting, @samples, @history, @now)
      on conflict(id) do update set name=excluded.name, realm_name=coalesce(excluded.realm_name, characters.realm_name),
        class=coalesce(excluded.class, characters.class), spec=coalesce(excluded.spec, characters.spec), role=coalesce(excluded.role, characters.role),
        ilvl=coalesce(excluded.ilvl, characters.ilvl), thumbnail=coalesce(excluded.thumbnail, characters.thumbnail),
@@ -405,7 +455,7 @@ async function upsertCharacter(
        wcl_hidden=coalesce(excluded.wcl_hidden, characters.wcl_hidden), wcl=coalesce(excluded.wcl, characters.wcl),
        socials=coalesce(excluded.socials, characters.socials), main_character=coalesce(excluded.main_character, characters.main_character),
        bio=coalesce(excluded.bio, characters.bio), recruiting=coalesce(excluded.recruiting, characters.recruiting),
-       seen_samples=excluded.seen_samples, updated_at=excluded.updated_at`,
+       history=coalesce(excluded.history, characters.history), seen_samples=excluded.seen_samples, updated_at=excluded.updated_at`,
   ).run({
     id: s.id,
     name: profile?.name ?? s.name,
@@ -435,6 +485,205 @@ async function upsertCharacter(
     bio: social?.bio ?? null,
     recruiting: social ? Number(social.recruiting) : null,
     samples: JSON.stringify(samples.slice(-200)),
+    history: (() => {
+      const h = buildHistory(tier, profile);
+      return h ? JSON.stringify(h) : null;
+    })(),
     now: Date.now(),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Jogadores avulsos: fazem mítico no tier mas não estão em nenhum raid team escaneado
+
+const BR_REALMS = ["azralon", "gallywix", "goldrinn", "nemesis", "tol-barad"];
+
+interface Found {
+  id: string;
+  name: string;
+  realmSlug: string;
+  sources: Set<string>;
+  /** guilda do personagem em cada kill ranqueado (WCL) ou guilda do log importado */
+  logGuilds: Set<string>;
+  noGuildKills: number; // kills ranqueados sem guilda
+  bosses: Set<number>;
+  rioKilled: number | null;
+  killTimes: number[];
+  reports: Set<string>;
+}
+
+function newFound(map: Map<string, Found>, realmSlug: string, name: string): Found {
+  const id = charId(realmSlug, name);
+  let f = map.get(id);
+  if (!f) {
+    f = {
+      id,
+      name,
+      realmSlug,
+      sources: new Set(),
+      logGuilds: new Set(),
+      noGuildKills: 0,
+      bosses: new Set(),
+      rioKilled: null,
+      killTimes: [],
+      reports: new Set(),
+    };
+    map.set(id, f);
+  }
+  return f;
+}
+
+async function scanStandalone(
+  tier: TierInfo,
+  params: ScanParams,
+  guildSets: { scanned: Set<string>; mythicRanked: Set<string> },
+  useWcl: boolean,
+  serverMap: Record<string, string>,
+) {
+  const realms = params.scope.kind === "realms" ? params.scope.realms : BR_REALMS;
+  const found = new Map<string, Found>();
+
+  // 1) rankings por boss da WCL (pega quem loga, inclusive sem guilda)
+  if (useWcl) {
+    let step = 0;
+    const steps = tier.wclEncounterIds.length * realms.length * 2;
+    for (const enc of tier.wclEncounterIds) {
+      for (const realm of realms) {
+        for (const metric of ["dps", "hps"] as const) {
+          step++;
+          job.state.phase = `Avulsos: rankings da WCL ${step}/${steps}`;
+          job.state.current = `${realm} · ${metric.toUpperCase()}`;
+          for (let page = 1; page <= 20; page++) {
+            checkStop();
+            const res = await wcl.encounterRankingsPage(enc, realm, metric, page).catch((e) => {
+              log("warn", `Rankings ${enc}/${realm}: ${e instanceof Error ? e.message : e}`);
+              return null;
+            });
+            if (!res) break;
+            for (const r of res.rankings) {
+              const f = newFound(found, wcl.slugifyServer(r.server.name, serverMap), r.name);
+              f.sources.add("wcl");
+              f.bosses.add(enc);
+              // no ranking, "guild" é a guilda do personagem na hora do kill
+              if (r.guild) f.logGuilds.add(r.guild.name);
+              else f.noGuildKills++;
+              if (r.startTime) f.killTimes.push(r.startTime);
+            }
+            if (!res.hasMorePages) break;
+          }
+        }
+      }
+    }
+  }
+
+  // 2) guildas não míticas (heroico) do Raider.io: membros com kill mítico fazem pug
+  job.state.phase = "Avulsos: guildas heroicas no Raider.io";
+  const heroic: rio.RioRaidRankingEntry[] = [];
+  if (params.scope.kind === "subregion") {
+    heroic.push(
+      ...(await rio.raidRankings({ raid: tier.raidSlug, difficulty: "heroic", region: params.scope.value }).catch(() => [])),
+    );
+  } else {
+    for (const realm of params.scope.realms)
+      heroic.push(...(await rio.raidRankings({ raid: tier.raidSlug, difficulty: "heroic", region: "us", realm }).catch(() => [])));
+  }
+  const heroicOnly = heroic.filter((e) => !guildSets.mythicRanked.has(e.guild.name.toLowerCase()));
+  let gi = 0;
+  for (const e of heroicOnly) {
+    checkStop();
+    job.state.current = `${e.guild.name} (${++gi}/${heroicOnly.length})`;
+    const roster = await rio.guildRoster("us", e.guild.realm.slug, e.guild.name).catch(() => [] as rio.RioRosterMember[]);
+    for (const m of roster) {
+      const killed = m.raidProgress?.raid.slug === tier.raidSlug ? (m.raidProgress.progress.mythic ?? 0) : 0;
+      if (killed <= 0) continue;
+      const f = newFound(found, m.character.realm.slug, m.character.name);
+      f.sources.add("roster");
+      f.rioKilled = Math.max(f.rioKilled ?? 0, killed);
+    }
+  }
+
+  // 3) tira quem já está num raid team escaneado e quem só aparece em logs de guildas míticas fora do escopo
+  const inTeams = new Set(
+    (
+      db()
+        .prepare("select distinct gm.char_id from guild_members gm join guilds g on g.id = gm.guild_id where g.raid_slug = ?")
+        .all(tier.raidSlug) as { char_id: string }[]
+    ).map((r) => r.char_id),
+  );
+  const unscannedMythic = (g: string) => guildSets.mythicRanked.has(g.toLowerCase()) && !guildSets.scanned.has(g.toLowerCase());
+  const list = [...found.values()]
+    .filter((f) => !inTeams.has(f.id))
+    .filter((f) => f.sources.has("roster") || f.noGuildKills > 0 || [...f.logGuilds].some((g) => !unscannedMythic(g)))
+    .sort((a, b) => Math.max(b.bosses.size, b.rioKilled ?? 0) - Math.max(a.bosses.size, a.rioKilled ?? 0))
+    .slice(0, params.maxStandalone);
+  log("info", `Avulsos: ${list.length} jogadores (de ${found.size} encontrados fora dos raid teams)`);
+
+  saveStandalone(list, tier);
+  job.state.phase = "Avulsos: perfis e parses";
+  let done = 0;
+  await enrichCharacters(list, tier, params, useWcl, new Map(), () => {
+    job.state.current = `${++done}/${list.length}`;
+  });
+}
+
+function saveStandalone(list: Found[], tier: TierInfo) {
+  const d = db();
+  const get = d.prepare("select * from standalone where char_id = ? and raid_slug = ?");
+  const put = d.prepare(
+    `insert into standalone(char_id, raid_slug, sources, log_guilds, bosses, rio_killed, kill_times, reports, last_kill, found_at)
+     values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     on conflict(char_id, raid_slug) do update set sources = excluded.sources, log_guilds = excluded.log_guilds, bosses = excluded.bosses,
+       rio_killed = excluded.rio_killed, kill_times = excluded.kill_times, reports = excluded.reports, last_kill = excluded.last_kill,
+       found_at = excluded.found_at`,
+  );
+  const merge = <T>(a: string | null | undefined, b: Iterable<T>): T[] => [...new Set([...((a ? JSON.parse(a) : []) as T[]), ...b])];
+  d.transaction(() => {
+    for (const f of list) {
+      const prev = get.get(f.id, tier.raidSlug) as Record<string, string | null> | undefined;
+      const times = merge<number>(prev?.kill_times, f.killTimes);
+      put.run(
+        f.id,
+        tier.raidSlug,
+        JSON.stringify(merge(prev?.sources, f.sources)),
+        JSON.stringify(merge(prev?.log_guilds, [...f.logGuilds, ...(f.noGuildKills > 0 ? [NO_GUILD_LABEL] : [])])),
+        JSON.stringify(merge(prev?.bosses, f.bosses)),
+        Math.max(f.rioKilled ?? 0, Number(prev?.rio_killed ?? 0)) || null,
+        JSON.stringify(times.slice(-300)),
+        JSON.stringify(merge(prev?.reports, f.reports)),
+        times.length ? Math.max(...times) : null,
+        Date.now(),
+      );
+    }
+  })();
+}
+
+const NO_GUILD_LABEL = "sem guilda";
+
+/** Importa um log (público ou não listado) e adiciona quem lutou contra bosses nele como avulso. */
+export async function importReportLink(input: string) {
+  const code = input.match(/reports\/([A-Za-z0-9]{16})/)?.[1] ?? input.trim().match(/^[A-Za-z0-9]{16}$/)?.[0];
+  if (!code) throw new Error("Link inválido: cole um link de report da Warcraft Logs (…/reports/XXXXXXXXXXXXXXXX)");
+  if (!wcl.wclConfigured()) throw new Error("Configure a Warcraft Logs no .env.local para importar logs");
+  const tier = await loadTier();
+  const rep = await wcl.importReport(code);
+  if (!rep) throw new Error("Report não encontrado. A API só lê logs públicos e não listados — privados ficam de fora.");
+  const serverMap = await wcl.serverSlugMap();
+  const mythic = rep.detail.fights.filter((f) => f.difficulty === 5);
+  const fights = mythic.length ? mythic : rep.detail.fights;
+  const inRaid = (id: number) => !tier.wclEncounterIds.length || tier.wclEncounterIds.includes(id);
+  const found = new Map<string, Found>();
+  for (const p of rep.detail.players) {
+    const mine = fights.filter((f) => f.friendlyPlayers.includes(p.id));
+    if (!mine.length) continue;
+    const f = newFound(found, wcl.slugifyServer(p.server, serverMap), p.name);
+    f.sources.add("report");
+    f.reports.add(code);
+    if (rep.guild) f.logGuilds.add(rep.guild.name);
+    for (const x of mine) if (x.kill && x.difficulty === 5 && inRaid(x.encounterID)) f.bosses.add(x.encounterID);
+    f.killTimes.push(rep.startTime);
+  }
+  const list = [...found.values()];
+  saveStandalone(list, tier);
+  await enrichCharacters(list, tier, { ...DEFAULT_SCAN }, true);
+  return { title: rep.title, visibility: rep.visibility, players: list.length, mythic: mythic.length > 0 };
 }

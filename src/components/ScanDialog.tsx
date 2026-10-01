@@ -23,6 +23,7 @@ export function ScanDialog({
   status,
   onStart,
   onStop,
+  onImport,
   totalBosses,
   wclConfigured,
 }: {
@@ -31,6 +32,7 @@ export function ScanDialog({
   status: ScanStatus | null;
   onStart: (p: ScanParams) => Promise<string | null>;
   onStop: () => void;
+  onImport: (url: string) => Promise<{ error?: string; ok?: string }>;
   totalBosses: number;
   wclConfigured: boolean;
 }) {
@@ -44,6 +46,15 @@ export function ScanDialog({
   });
   const [extraRealms, setExtraRealms] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<{ error?: string; ok?: string } | null>(null);
+  const runImport = async () => {
+    setImporting(true);
+    setImportMsg(null);
+    setImportMsg(await onImport(importUrl));
+    setImporting(false);
+  };
 
   useEffect(() => {
     const d = ref.current;
@@ -207,6 +218,31 @@ export function ScanDialog({
                 <input type="checkbox" checked={p.fetchSocials} onChange={(e) => setP({ ...p, fetchSocials: e.target.checked })} />
                 Buscar redes sociais no Raider.io
               </label>
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={p.findStandalone}
+                  onChange={(e) => setP({ ...p, findStandalone: e.target.checked })}
+                  className="mt-0.5"
+                />
+                <span>
+                  Procurar jogadores avulsos
+                  <span className="block text-xs text-muted">
+                    Quem matou bosses míticos em pugs ou em guildas só heroicas: rankings por boss da WCL + rosters do Raider.io.
+                  </span>
+                </span>
+              </label>
+              {p.findStandalone && (
+                <div className="ml-6">
+                  <NumberField
+                    label="Máx. de avulsos"
+                    value={p.maxStandalone}
+                    min={10}
+                    max={2000}
+                    onChange={(v) => setP({ ...p, maxStandalone: v })}
+                  />
+                </div>
+              )}
             </div>
           </fieldset>
 
@@ -262,6 +298,47 @@ export function ScanDialog({
               {error}
             </p>
           )}
+
+          <section aria-labelledby="import-title" className="space-y-2 border-t border-line pt-4">
+            <h3 id="import-title" className="font-medium">
+              Importar log por link
+            </h3>
+            <p className="text-xs text-muted">
+              Para pugs postados no Discord: quem lutou contra bosses no log entra como avulso. Funciona com logs públicos e não
+              listados. Logs privados não podem ser lidos pela API.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <label className="sr-only" htmlFor="import-url">
+                Link do report
+              </label>
+              <input
+                id="import-url"
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                placeholder="https://www.warcraftlogs.com/reports/…"
+                className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2.5 py-1.5 placeholder:text-muted"
+              />
+              <button
+                type="button"
+                onClick={runImport}
+                disabled={importing || !importUrl.trim()}
+                className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 font-medium hover:bg-surface-2 disabled:opacity-50"
+              >
+                {importing && <Loader2 size={14} className="motion-safe:animate-spin" aria-hidden />}
+                {importing ? "Importando…" : "Importar"}
+              </button>
+            </div>
+            {importMsg?.error && (
+              <p role="alert" className="text-danger">
+                {importMsg.error}
+              </p>
+            )}
+            {importMsg?.ok && (
+              <p role="status" className="text-ok">
+                {importMsg.ok}
+              </p>
+            )}
+          </section>
         </div>
 
         <footer className="flex justify-end gap-2 border-t border-line px-5 py-3">

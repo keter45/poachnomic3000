@@ -129,7 +129,7 @@ function Main() {
     if (!candidates) return [];
     const scored = candidates.map((c) => ({ c, s: scoreCandidate(c, settings, tier), guildPos: 0, guildSize: 0 }));
     const byGuild = new Map<string, Row[]>();
-    for (const r of scored) byGuild.set(r.c.guildId, [...(byGuild.get(r.c.guildId) ?? []), r]);
+    for (const r of scored) if (r.c.guildId) byGuild.set(r.c.guildId, [...(byGuild.get(r.c.guildId) ?? []), r]);
     for (const list of byGuild.values()) {
       list.sort((a, b) => (b.s.total ?? -1) - (a.s.total ?? -1));
       list.forEach((r, i) => ((r.guildPos = i + 1), (r.guildSize = list.length)));
@@ -138,13 +138,25 @@ function Main() {
   }, [candidates, settings, tier]);
 
   const filtered = useMemo(() => sortRows(applyFilters(rows, filters), sort.key, sort.dir), [rows, filters, sort]);
-  const realms = useMemo(() => [...new Set(rows.map((r) => r.c.guildRealm))].sort(), [rows]);
+  const realms = useMemo(
+    () => [...new Set(rows.map((r) => r.c.guildRealm ?? r.c.realmName).filter((x): x is string => Boolean(x)))].sort(),
+    [rows],
+  );
   const guilds = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of rows) m.set(r.c.guildId, `${r.c.guildName} (${r.c.guildRealm})`);
+    for (const r of rows) if (r.c.guildId) m.set(r.c.guildId, `${r.c.guildName} (${r.c.guildRealm})`);
     return [...m.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [rows]);
-  const targetCount = useMemo(() => rows.filter((r) => r.c.target).length, [rows]);
+  const counts = useMemo(
+    () => ({
+      all: rows.length,
+      guild: rows.filter((r) => r.c.kind === "guild").length,
+      standalone: rows.filter((r) => r.c.kind === "standalone").length,
+      targets: rows.filter((r) => r.c.target).length,
+    }),
+    [rows],
+  );
+  const targetCount = counts.targets;
   const detailRow = useMemo(() => rows.find((r) => r.c.id === detailId) ?? null, [rows, detailId]);
 
   const onSort = (key: SortKey) =>
@@ -173,6 +185,15 @@ function Main() {
     return null;
   };
   const stopScan = async () => setScan({ ...(await fetch("/api/scan", { method: "DELETE" }).then((r) => r.json())), budget: scan?.budget ?? null });
+
+  const importLog = async (url: string) => {
+    const res = await fetch("/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }) });
+    const j = await res.json();
+    if (!res.ok) return { error: j.error ?? "Não foi possível importar o log" };
+    loadCandidates();
+    const vis = j.visibility === "unlisted" ? "não listado" : "público";
+    return { ok: `“${j.title}” (${vis}): ${j.players} jogadores adicionados aos avulsos${j.mythic ? "" : " — o log não tem lutas míticas"}.` };
+  };
 
   const budget = scan?.budget ?? meta?.budget ?? null;
   const active = activeFilterCount(filters);
@@ -252,7 +273,9 @@ function Main() {
             <div role="group" aria-label="Lista" className="inline-flex rounded-md border border-line bg-surface p-0.5 text-sm">
               {(
                 [
-                  ["all", `Todos (${fmtInt(rows.length)})`],
+                  ["all", `Todos (${fmtInt(counts.all)})`],
+                  ["guild", `Em guildas (${fmtInt(counts.guild)})`],
+                  ["standalone", `Avulsos (${fmtInt(counts.standalone)})`],
                   ["targets", `Alvos (${fmtInt(targetCount)})`],
                 ] as const
               ).map(([v, label]) => (
@@ -276,7 +299,9 @@ function Main() {
               Filtros{active ? ` (${active})` : ""}
             </button>
             <p className="ml-auto text-sm text-muted tabular" aria-live="polite">
-              {candidates ? `${fmtInt(filtered.length)} personagens · ${fmtInt(new Set(filtered.map((r) => r.c.guildId)).size)} guildas` : ""}
+              {candidates
+                ? `${fmtInt(filtered.length)} personagens · ${fmtInt(new Set(filtered.map((r) => r.c.guildId).filter(Boolean)).size)} guildas`
+                : ""}
             </p>
           </div>
 
@@ -295,6 +320,12 @@ function Main() {
           ) : filtered.length === 0 ? (
             filters.view === "targets" && targetCount === 0 ? (
               <Empty title="Nenhum alvo ainda" body="Marque a estrela de um personagem para acompanhar o contato com ele aqui." />
+            ) : filters.view === "standalone" && counts.standalone === 0 ? (
+              <Empty
+                title="Nenhum jogador avulso ainda"
+                body="Rode um scan com “Procurar jogadores avulsos” ligado, ou importe o link de um log de pug."
+                action={{ label: "Abrir scan", onClick: () => setScanOpen(true) }}
+              />
             ) : (
               <Empty
                 title="Ninguém passa nesses filtros"
@@ -323,6 +354,7 @@ function Main() {
         status={scan}
         onStart={startScan}
         onStop={stopScan}
+        onImport={importLog}
         totalBosses={totalBosses}
         wclConfigured={meta?.wclConfigured ?? true}
       />

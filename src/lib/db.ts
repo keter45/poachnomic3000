@@ -107,6 +107,24 @@ function migrate(d: Database.Database) {
     );
   `);
   addColumn(d, "guilds", "history_since integer"); // início da janela de logs consultada (tempo de casa)
+  addColumn(d, "characters", "history text"); // JSON RaidHistory[]: progressão nos tiers anteriores
+
+  d.exec(`
+    -- jogadores que fazem mítico fora de um raid team escaneado (pugs, guildas não míticas, logs importados)
+    create table if not exists standalone (
+      char_id text not null,
+      raid_slug text not null,
+      sources text not null,            -- JSON string[]: wcl | roster | report
+      log_guilds text,                  -- JSON string[]: guildas dos logs dos kills
+      bosses text,                      -- JSON encounterIDs (WCL) mortos no mítico
+      rio_killed integer,               -- bosses míticos segundo o roster do Raider.io
+      kill_times text,                  -- JSON number[]: horários dos kills (atividade)
+      reports text,                     -- JSON string[]: códigos de logs importados
+      last_kill integer,
+      found_at integer,
+      primary key (char_id, raid_slug)
+    );
+  `);
 }
 
 function addColumn(d: Database.Database, table: string, def: string) {

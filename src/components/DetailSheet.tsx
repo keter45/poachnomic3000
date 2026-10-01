@@ -16,8 +16,14 @@ import {
   tenureLabel,
   wclCharUrl,
 } from "@/lib/wow";
-import type { Row } from "./filters";
+import { hasSocials, type Row } from "./filters";
 import { ScheduleGrid, ScheduleLegend } from "./ScheduleGrid";
+
+const SOURCE_LABEL: Record<string, string> = {
+  wcl: "rankings da Warcraft Logs",
+  roster: "guilda não mítica (Raider.io)",
+  report: "log importado",
+};
 
 export const TARGET_STATUS: { id: string; label: string }[] = [
   { id: "watch", label: "Observando" },
@@ -80,9 +86,10 @@ function Detail({
   const tenure = tenureLabel(c.firstSeen, c.guildHistorySince);
   const links = c.socials ? socialLinks(c.socials) : [];
   const bioContacts = contactsInBio(c.bio);
+  const mainIsOther = Boolean(c.main && (c.main.name.toLowerCase() !== c.name.toLowerCase() || c.main.realm !== c.realmSlug));
   const [note, setNote] = useState(c.target?.note ?? "");
   const differentGuild =
-    c.rioGuild && (c.rioGuild.name.toLowerCase() !== c.guildName.toLowerCase() || c.rioGuild.realm !== c.guildRealm);
+    c.rioGuild && (c.rioGuild.name.toLowerCase() !== (c.guildName ?? "").toLowerCase() || c.rioGuild.realm !== c.guildRealm);
 
   return (
     <div className="flex h-full flex-col">
@@ -181,7 +188,104 @@ function Detail({
           )}
         </section>
 
+        {/* avulso */}
+        {c.kind === "standalone" && c.standalone && (
+          <section aria-labelledby="sec-standalone" className="space-y-2">
+            <h3 id="sec-standalone" className="font-semibold">
+              Jogador avulso
+            </h3>
+            <p className="text-muted text-pretty">
+              Matou bosses míticos deste tier, mas não entrou no raid team de nenhuma guilda escaneada.
+            </p>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+              <dt className="text-muted">Guilda no jogo</dt>
+              <dd>{c.rioGuild ? `${c.rioGuild.name} (${c.rioGuild.realm})` : "Sem guilda"}</dd>
+              <dt className="text-muted">Encontrado em</dt>
+              <dd>{c.standalone.sources.map((s) => SOURCE_LABEL[s] ?? s).join(" · ")}</dd>
+              {c.standalone.logGuilds.length > 0 && (
+                <>
+                  <dt className="text-muted">Guilda nos kills</dt>
+                  <dd>{c.standalone.logGuilds.join(", ")}</dd>
+                </>
+              )}
+              {c.standalone.lastKill && (
+                <>
+                  <dt className="text-muted">Último kill</dt>
+                  <dd>{new Date(c.standalone.lastKill).toLocaleDateString("pt-BR")}</dd>
+                </>
+              )}
+              {c.standalone.reports.length > 0 && (
+                <>
+                  <dt className="text-muted">Logs importados</dt>
+                  <dd className="flex flex-wrap gap-1.5">
+                    {c.standalone.reports.map((code) => (
+                      <ExtLink key={code} href={`https://www.warcraftlogs.com/reports/${code}`}>
+                        {code.slice(0, 6)}…
+                      </ExtLink>
+                    ))}
+                  </dd>
+                </>
+              )}
+            </dl>
+          </section>
+        )}
+
+        {/* histórico */}
+        <section aria-labelledby="sec-history" className="space-y-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 id="sec-history" className="font-semibold">
+              Histórico de raids
+            </h3>
+            <span className="text-xs text-muted">mítico neste personagem · conquistas da conta</span>
+          </div>
+          {!c.history?.length ? (
+            <p className="text-muted">Sem histórico — rode um novo scan para buscar.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th scope="col" className="py-1 font-medium">
+                    Raid
+                  </th>
+                  <th scope="col" className="py-1 text-right font-medium">
+                    Mítico
+                  </th>
+                  <th scope="col" className="py-1 pl-3 font-medium">
+                    Conquista
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {c.history.map((h) => (
+                  <tr key={h.slug} className="border-t border-line">
+                    <td className="py-1.5 pr-2">{h.name}</td>
+                    <td className="py-1.5 text-right tabular">
+                      {h.mythic}
+                      <span className="text-muted">/{h.total}</span>
+                    </td>
+                    <td className="py-1.5 pl-3">
+                      {h.ce ? (
+                        <span className="font-medium">Cutting Edge · {new Date(h.ce).toLocaleDateString("pt-BR")}</span>
+                      ) : h.aotc ? (
+                        <span>AOTC</span>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {c.history?.some((h) => h.ce && h.mythic < h.total) && (
+            <p className="text-xs text-muted">
+              Tem Cutting Edge sem todos os kills neste personagem: provavelmente fez o raid com outro personagem.
+            </p>
+          )}
+        </section>
+
         {/* guilda */}
+        {c.kind === "guild" && (
         <section aria-labelledby="sec-guild" className="space-y-2">
           <h3 id="sec-guild" className="font-semibold">
             Onde raida
@@ -221,13 +325,14 @@ function Detail({
             )}
           </dl>
         </section>
+        )}
 
         {/* contato */}
         <section aria-labelledby="sec-contact" className="space-y-2">
           <h3 id="sec-contact" className="font-semibold">
             Contato
           </h3>
-          {!c.socials && !bioContacts.length && !c.main ? (
+          {!hasSocials(c) && !bioContacts.length && !mainIsOther ? (
             <p className="text-muted">Nenhuma rede social pública no perfil do Raider.io.</p>
           ) : (
             <ul className="space-y-1.5">
@@ -249,7 +354,7 @@ function Detail({
                   <span className="font-medium">{b}</span>
                 </li>
               ))}
-              {c.main && (c.main.name.toLowerCase() !== c.name.toLowerCase() || c.main.realm !== c.realmSlug) && (
+              {c.main && mainIsOther && (
                 <li className="flex items-center gap-2">
                   <span className="w-20 shrink-0 text-muted">Main</span>
                   <a
@@ -342,12 +447,17 @@ function Detail({
             values={c.activity ? toLocal(c.activity, settings.tzOffset) : null}
             ours={ours}
           />
-          <ScheduleGrid
-            label={`Raids da ${c.guildName}`}
-            values={c.guildSchedule && c.guildSchedule.some((v) => v > 0) ? toLocal(c.guildSchedule, settings.tzOffset) : null}
-            ours={ours}
-          />
-          {c.guildLogsSource !== "wcl" && (
+          {c.kind === "guild" && (
+            <ScheduleGrid
+              label={`Raids da ${c.guildName}`}
+              values={c.guildSchedule && c.guildSchedule.some((v) => v > 0) ? toLocal(c.guildSchedule, settings.tzOffset) : null}
+              ours={ours}
+            />
+          )}
+          {c.kind === "standalone" && (
+            <p className="text-xs text-muted">Para avulsos, o horário vem dos kills ranqueados e dos logouts vistos pelo Raider.io.</p>
+          )}
+          {c.kind === "guild" && c.guildLogsSource !== "wcl" && (
             <p className="text-xs text-muted">Horário da guilda estimado pelos pulls registrados no Raider.io (menos preciso que logs).</p>
           )}
           {c.guildBio && (

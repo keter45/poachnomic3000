@@ -10,13 +10,15 @@ export interface Filters {
   minProgress: number;
   minMplus: number;
   minSchedule: number;
+  minHistory: number;
+  onlyCE: boolean;
   realms: string[];
   guild: string;
   onlySocials: boolean;
   onlyOutsideRoster: boolean;
   onlyRecruiting: boolean;
   hideAlts: boolean;
-  view: "all" | "targets";
+  view: "all" | "guild" | "standalone" | "targets";
 }
 
 export const DEFAULT_FILTERS: Filters = {
@@ -28,6 +30,8 @@ export const DEFAULT_FILTERS: Filters = {
   minProgress: 0,
   minMplus: 0,
   minSchedule: 0,
+  minHistory: 0,
+  onlyCE: false,
   realms: [],
   guild: "",
   onlySocials: false,
@@ -47,6 +51,8 @@ export function activeFilterCount(f: Filters) {
   if (f.minProgress) n++;
   if (f.minMplus) n++;
   if (f.minSchedule) n++;
+  if (f.minHistory) n++;
+  if (f.onlyCE) n++;
   if (f.realms.length) n++;
   if (f.guild) n++;
   if (f.onlySocials) n++;
@@ -70,7 +76,9 @@ export function applyFilters(rows: Row[], f: Filters): Row[] {
   const present = new Set(rows.map((r) => `${r.c.name.toLowerCase()}|${r.c.realmSlug}`));
   return rows.filter(({ c, s }) => {
     if (f.view === "targets" && !c.target) return false;
-    if (q && !`${c.name} ${c.guildName} ${c.realmName ?? ""}`.toLowerCase().includes(q)) return false;
+    if (f.view === "guild" && c.kind !== "guild") return false;
+    if (f.view === "standalone" && c.kind !== "standalone") return false;
+    if (q && !`${c.name} ${c.guildName ?? ""} ${c.rioGuild?.name ?? ""} ${c.realmName ?? ""}`.toLowerCase().includes(q)) return false;
     if (f.classes.length && !f.classes.includes(c.class ?? "")) return false;
     if (f.roles.length && !f.roles.includes(c.role ?? "")) return false;
     if (f.minScore && (s.total ?? 0) < f.minScore) return false;
@@ -78,10 +86,12 @@ export function applyFilters(rows: Row[], f: Filters): Row[] {
     if (f.minProgress && (c.mythicKilled ?? 0) < f.minProgress) return false;
     if (f.minMplus && (c.mplusScore ?? 0) < f.minMplus) return false;
     if (f.minSchedule && (s.parts.schedule ?? 0) < f.minSchedule) return false;
-    if (f.realms.length && !f.realms.includes(c.guildRealm)) return false;
+    if (f.minHistory && (s.parts.history ?? 0) < f.minHistory) return false;
+    if (f.onlyCE && !c.history?.some((h) => h.ce)) return false;
+    if (f.realms.length && !f.realms.includes(c.guildRealm ?? c.realmName ?? "")) return false;
     if (f.guild && c.guildId !== f.guild) return false;
     if (f.onlySocials && !hasSocials(c)) return false;
-    if (f.onlyOutsideRoster && c.inRoster) return false;
+    if (f.onlyOutsideRoster && (c.kind !== "guild" || c.inRoster)) return false;
     if (f.onlyRecruiting && !c.recruiting) return false;
     if (f.hideAlts && c.main) {
       const isSelf = c.main.name.toLowerCase() === c.name.toLowerCase() && c.main.realm === c.realmSlug;
@@ -92,7 +102,7 @@ export function applyFilters(rows: Row[], f: Filters): Row[] {
   });
 }
 
-export type SortKey = "score" | "logs" | "progress" | "mplus" | "schedule" | "ilvl" | "nights" | "tenure" | "name";
+export type SortKey = "score" | "logs" | "progress" | "mplus" | "schedule" | "history" | "ilvl" | "nights" | "tenure" | "name";
 
 export function sortRows(rows: Row[], key: SortKey, dir: "asc" | "desc"): Row[] {
   const val = ({ c, s }: Row): number | string | null => {
@@ -107,6 +117,8 @@ export function sortRows(rows: Row[], key: SortKey, dir: "asc" | "desc"): Row[] 
         return c.mplusScore;
       case "schedule":
         return s.parts.schedule;
+      case "history":
+        return s.parts.history;
       case "ilvl":
         return c.ilvl;
       case "nights":

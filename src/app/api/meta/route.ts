@@ -1,7 +1,6 @@
 import { guildCount } from "@/lib/candidates";
-import { getSetting } from "@/lib/db";
 import { loadTier } from "@/lib/scanner";
-import { DEFAULT_SETTINGS, type Settings } from "@/lib/types";
+import { readSettings } from "@/lib/settings";
 import { refreshBudget, wclBudget, wclConfigured } from "@/lib/wcl";
 
 export async function GET() {
@@ -20,6 +19,6 @@ export async function GET() {
     wclConfigured: wclConfigured(),
     budget,
     guilds: guildCount(),
-    settings: { ...DEFAULT_SETTINGS, ...getSetting<Partial<Settings>>("settings", {}) },
+    settings: readSettings(),
   });
 }

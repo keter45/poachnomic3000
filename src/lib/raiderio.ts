@@ -36,13 +36,13 @@ export interface RioSeason {
 }
 
 /** Descobre a expansão atual tentando IDs decrescentes. */
-async function staticData<T>(kind: "raiding" | "mythic-plus"): Promise<T> {
-  return cached(`rio:static:${kind}`, 24 * H, async () => {
+async function staticData<T>(kind: "raiding" | "mythic-plus"): Promise<T & { expansionId: number }> {
+  return cached(`rio:static2:${kind}`, 24 * H, async () => {
     for (let exp = 14; exp >= 9; exp--) {
       try {
         const data = await get<T>(`/api/v1/${kind}/static-data`, { expansion_id: exp });
-        const list = (data as { raids?: unknown[]; seasons?: unknown[] } | null);
-        if (list && ((list.raids?.length ?? 0) > 0 || (list.seasons?.length ?? 0) > 0)) return data as T;
+        const list = data as { raids?: unknown[]; seasons?: unknown[] } | null;
+        if (list && ((list.raids?.length ?? 0) > 0 || (list.seasons?.length ?? 0) > 0)) return { ...(data as T), expansionId: exp };
       } catch {
         /* expansão inexistente */
       }
@@ -58,6 +58,22 @@ export async function currentRaids(region = "us"): Promise<RioRaid[]> {
   return raids
     .filter((r) => Date.parse(r.starts[region]) <= now && now < Date.parse(r.ends[region]))
     .sort((a, b) => b.encounters.length - a.encounters.length);
+}
+
+/** Raids de tier da expansão atual e da anterior, do mais recente ao mais antigo (sem eventos como o BRD). */
+export async function tierRaids(region = "us"): Promise<RioRaid[]> {
+  const { raids: current, expansionId } = await staticData<{ raids: RioRaid[] }>("raiding");
+  const previous = await cached(`rio:static:raiding:${expansionId - 1}`, 24 * H, async () => {
+    const data = await get<{ raids: RioRaid[] }>("/api/v1/raiding/static-data", { expansion_id: expansionId - 1 }).catch(() => null);
+    return data?.raids ?? [];
+  });
+  const all = [...current, ...previous].filter((r) => r.encounters.length >= 4);
+  const start = (r: RioRaid) => Date.parse(r.starts[region]);
+  const end = (r: RioRaid) => Date.parse(r.ends[region]);
+  // um evento (ex.: BRD) cabe inteiro na janela de outro raid que começou antes
+  return all
+    .filter((r) => !all.some((o) => o !== r && start(o) < start(r) && end(r) <= end(o)))
+    .sort((a, b) => start(b) - start(a));
 }
 
 export async function currentSeason(region = "us"): Promise<RioSeason | undefined> {
@@ -213,16 +229,22 @@ export interface RioCharacterProfile {
   gear?: { item_level_equipped: number };
   guild?: { name: string; realm: string } | null;
   mythic_plus_scores_by_season?: { season: string; scores: { all: number } }[];
-  raid_progression?: Record<string, { mythic_bosses_killed: number; total_bosses: number }>;
+  raid_progression?: Record<string, { mythic_bosses_killed: number; heroic_bosses_killed: number; total_bosses: number }>;
+  raid_achievement_curve?: { raid: string; aotc?: string; cutting_edge?: string }[];
 }
 
-export async function characterProfile(region: string, realm: string, name: string) {
-  return cached(`rio:char:${region}:${realm}:${name.toLowerCase()}`, 12 * H, () =>
+/**
+ * Perfil público com progressão da expansão atual e da anterior, mais AOTC/CE dos raids pedidos.
+ * AOTC/CE são conquistas da conta: aparecem mesmo que o raid tenha sido feito em outro personagem.
+ */
+export async function characterProfile(region: string, realm: string, name: string, curveRaids: string[] = []) {
+  const curve = curveRaids.length ? `,raid_achievement_curve:${curveRaids.join(":")}` : "";
+  return cached(`rio:char2:${region}:${realm}:${name.toLowerCase()}`, 12 * H, () =>
     get<RioCharacterProfile>("/api/v1/characters/profile", {
       region,
       realm,
       name,
-      fields: "mythic_plus_scores_by_season:current,raid_progression,guild,gear",
+      fields: `mythic_plus_scores_by_season:current,raid_progression:previous-expansion:current-expansion,guild,gear${curve}`,
     }),
   );
 }
