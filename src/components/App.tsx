@@ -6,12 +6,14 @@ import { scoreCandidate } from "@/lib/score";
 import type { Candidate, ScanParams, Settings, TierInfo } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/types";
 import { fmtInt } from "@/lib/wow";
-import { CandidateTable } from "./CandidateTable";
+import { CandidateTable, ScaleLegend } from "./CandidateTable";
 import { DetailSheet } from "./DetailSheet";
 import { FilterPanel } from "./FilterPanel";
 import { activeFilterCount, applyFilters, DEFAULT_FILTERS, type Filters, groupByAccount, type Row, type SortKey, sortRows } from "./filters";
 import { ScanDialog, type ScanStatus } from "./ScanDialog";
+import { useUpdates } from "@/lib/desktop";
 import { type KeyStatus, SettingsDialog, type SettingsTab } from "./SettingsDialog";
+import { UpdateBanner } from "./Updates";
 
 interface Meta {
   tier: TierInfo | null;
@@ -65,6 +67,7 @@ function Main() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("keys");
   const [keys, setKeys] = useState<KeyStatus | null>(null);
+  const updates = useUpdates();
   const openSettings = (tab: SettingsTab) => {
     setSettingsTab(tab);
     setSettingsOpen(true);
@@ -291,6 +294,8 @@ function Main() {
         </div>
       )}
 
+      <UpdateBanner state={updates} />
+
       {meta && !meta.wclConfigured && (
         <div role="alert" className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm">
           <span className="flex-1">
@@ -342,7 +347,12 @@ function Main() {
               <SlidersHorizontal size={15} aria-hidden />
               Filtros{active ? ` (${active})` : ""}
             </button>
-            <p className="ml-auto text-sm text-muted tabular" aria-live="polite">
+            {candidates && rows.length > 0 && (
+              <div className="ml-auto">
+                <ScaleLegend />
+              </div>
+            )}
+            <p className="text-sm text-muted tabular" aria-live="polite">
               {candidates
                 ? `${fmtInt(filtered.length)} ${filters.groupAccounts ? "jogadores" : "personagens"} · ${fmtInt(new Set(filtered.map((r) => r.c.guildId).filter(Boolean)).size)} guildas`
                 : ""}
@@ -386,6 +396,7 @@ function Main() {
               onToggleTarget={(r) => setTarget(r.c.id, r.c.target ? null : "watch")}
               weights={settings.weights}
               totalBosses={totalBosses}
+              cutoffs={tier?.cutoffs ?? null}
             />
           )}
         </main>
@@ -417,6 +428,7 @@ function Main() {
         settings={settings}
         onSave={saveSettings}
         keys={keys}
+        updates={updates}
         onKeysSaved={(k) => {
           setKeys(k);
           loadMeta();

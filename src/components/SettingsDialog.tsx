@@ -4,12 +4,14 @@ import { Check, CircleAlert, Copy, Eye, EyeOff, Loader2, Plus, Trash2, X } from 
 import { useEffect, useRef, useState } from "react";
 import { DAY_SHORT, nightsToSlots } from "@/lib/schedule";
 import type { RaidNight, Settings } from "@/lib/types";
+import type { UpdateState } from "@/lib/desktop";
 import { ScheduleGrid } from "./ScheduleGrid";
+import { UpdatesPanel } from "./Updates";
 
 const DAY_LONG = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const hourLabel = (h: number) => `${String(h % 24).padStart(2, "0")}h${h >= 24 ? " (+1)" : ""}`;
 
-export type SettingsTab = "keys" | "schedule";
+export type SettingsTab = "keys" | "schedule" | "about";
 
 export interface KeyStatus {
   wcl: { configured: boolean; source: "app" | "env" | null; clientIdHint: string | null };
@@ -25,6 +27,7 @@ export function SettingsDialog({
   onSave,
   keys,
   onKeysSaved,
+  updates,
 }: {
   open: boolean;
   tab: SettingsTab;
@@ -34,6 +37,7 @@ export function SettingsDialog({
   onSave: (s: Partial<Settings>) => void;
   keys: KeyStatus | null;
   onKeysSaved: (k: KeyStatus) => void;
+  updates: UpdateState | null;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -66,6 +70,7 @@ export function SettingsDialog({
               [
                 ["keys", "Chaves de API"],
                 ["schedule", "Nosso horário"],
+                ["about", "Sobre"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -82,6 +87,9 @@ export function SettingsDialog({
                 {id === "keys" && keys && !keys.wcl.configured && (
                   <span className="ml-1.5 rounded bg-warn/15 px-1 py-px text-[11px] text-warn">pendente</span>
                 )}
+                {id === "about" && updates?.status === "downloaded" && (
+                  <span className="ml-1.5 rounded bg-accent-soft px-1 py-px text-[11px] text-text">nova versão</span>
+                )}
               </button>
             ))}
           </div>
@@ -91,6 +99,17 @@ export function SettingsDialog({
           <div role="tabpanel" id="panel-keys" aria-labelledby="tab-keys" className="flex min-h-0 flex-1 flex-col">
             {/* remonta ao abrir e quando o status das chaves chega, para começar no modo certo (editar ou não) */}
             <KeysPanel key={`${open}-${keys ? 1 : 0}`} keys={keys} onSaved={onKeysSaved} onClose={onClose} />
+          </div>
+        ) : tab === "about" ? (
+          <div role="tabpanel" id="panel-about" aria-labelledby="tab-about" className="flex min-h-0 flex-1 flex-col">
+            <div className="space-y-4 overflow-y-auto px-5 py-4">
+              <UpdatesPanel state={updates} />
+            </div>
+            <footer className="flex justify-end border-t border-line px-5 py-3">
+              <button type="button" onClick={onClose} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium hover:bg-surface-2">
+                Fechar
+              </button>
+            </footer>
           </div>
         ) : (
           <div role="tabpanel" id="panel-schedule" aria-labelledby="tab-schedule" className="flex min-h-0 flex-1 flex-col">

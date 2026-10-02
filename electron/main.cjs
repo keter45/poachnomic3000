@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const net = require("node:net");
 const path = require("node:path");
+const { setupUpdater } = require("./updater.cjs");
 
 const APP_NAME = "Poachnomic 3000";
 app.setName(APP_NAME);
@@ -85,7 +86,7 @@ async function start() {
     backgroundColor: "#0c0e12",
     autoHideMenuBar: true,
     show: false,
-    webPreferences: { contextIsolation: true, sandbox: true },
+    webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, "preload.cjs") },
   });
   win.once("ready-to-show", () => win.show());
   win.on("closed", () => (win = null));
@@ -131,6 +132,7 @@ async function start() {
 
     await waitForServer(port, 60_000);
     await win.loadURL(`http://127.0.0.1:${port}/`);
+    setupUpdater(() => win);
   } catch (e) {
     dialog.showErrorBox(APP_NAME, `Não foi possível iniciar o app: ${e.message}\n\nDetalhes em:\n${logFile}`);
     app.quit();

@@ -51,6 +51,18 @@ As chaves e os dados ficam só no seu computador, na pasta de dados do app:
 
 Desinstalar o app não apaga essa pasta. Para começar do zero, apague-a.
 
+### Atualizações
+
+A partir da versão 0.2.0 o app se atualiza pelos releases do GitHub:
+
+- **Windows e Linux (AppImage)**: o app procura versões novas ao abrir e a cada 6 horas, baixa em segundo plano e
+  mostra o aviso **Reiniciar e atualizar**. Se você só fechar o app, a atualização é instalada mesmo assim.
+- **macOS**: o app avisa que saiu versão nova e abre a página do release. A instalação é manual (baixar o .dmg e
+  substituir o app), porque o macOS só aceita atualização automática de apps com assinatura paga da Apple.
+
+A versão instalada e o botão **Procurar atualizações** ficam em **Configurações › Sobre**. Quem está na 0.1.0
+precisa instalar a 0.2.0 manualmente uma vez; daí em diante é automático.
+
 ## Rodar a partir do código
 
 Para quem quer mexer no projeto.
@@ -92,7 +104,8 @@ na pasta de dados do usuário.
 2. Crie e envie a tag: `git tag v0.2.0 && git push origin v0.2.0`.
 3. O workflow **Release** do GitHub Actions gera os instaladores de Windows, macOS e Linux e anexa a um release em
    rascunho.
-4. Revise o rascunho em *Releases*, escreva as notas e publique.
+4. Revise o rascunho em *Releases*, escreva as notas e publique. Só releases publicados (não rascunhos) chegam
+   para os apps instalados como atualização.
 
 ### Problemas comuns
 
@@ -200,6 +213,7 @@ rápidos.
 - `src/lib/score.ts`: o score, calculado no cliente para os pesos responderem na hora.
 - `src/components/`: a interface (tabela, filtros, detalhe, scan, configurações).
 - `electron/main.cjs`: o app desktop, que sobe o servidor e abre a janela.
+- `electron/updater.cjs` e `electron/preload.cjs`: atualização automática e a ponte com a interface.
 - `electron-builder.yml` e `.github/workflows/release.yml`: instaladores e release.
 
 Parte dos dados vem de endpoints internos do site do Raider.io (roster, detalhes da guilda e redes sociais). Eles

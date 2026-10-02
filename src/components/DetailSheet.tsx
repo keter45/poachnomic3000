@@ -14,6 +14,7 @@ import {
   rioCharUrl,
   socialLinks,
   tenureLabel,
+  tone,
   wclCharUrl,
   wowprogressUrl,
 } from "@/lib/wow";
@@ -186,7 +187,7 @@ function Detail({
             <h3 id="sec-score" className="font-semibold">
               Nosso score
             </h3>
-            <span className="text-2xl font-semibold tabular">{s.total ?? "—"}</span>
+            <span className={`text-2xl font-semibold tabular ${tone(s.total)}`}>{s.total ?? "—"}</span>
           </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
             {(Object.keys(s.parts) as ScorePart[]).map((k) => (
@@ -194,7 +195,7 @@ function Detail({
                 <dt className="text-xs text-muted">
                   {PART_LABEL[k]} <span className="tabular">· peso {settings.weights[k]}</span>
                 </dt>
-                <dd className="text-base font-semibold tabular">{s.parts[k] ?? "sem dados"}</dd>
+                <dd className={`text-base font-semibold tabular ${s.parts[k] === null ? "text-muted" : tone(s.parts[k])}`}>{s.parts[k] ?? "sem dados"}</dd>
               </div>
             ))}
           </dl>

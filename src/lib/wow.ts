@@ -67,6 +67,22 @@ export function parseTier(p: number | null): string {
   return "gray";
 }
 
+/**
+ * Classe de cor para qualquer nota 0–100, na mesma escala do parse da WCL (cinza → dourado).
+ * Sempre usada junto do número: a cor reforça, não substitui.
+ */
+export const tone = (v: number | null | undefined) => `parse-${parseTier(v === undefined ? null : v)}`;
+
+export const SCALE_STEPS: { tier: string; label: string }[] = [
+  { tier: "gray", label: "< 25" },
+  { tier: "green", label: "25+" },
+  { tier: "blue", label: "50+" },
+  { tier: "purple", label: "75+" },
+  { tier: "orange", label: "95+" },
+  { tier: "pink", label: "99+" },
+  { tier: "gold", label: "100" },
+];
+
 export const wclCharUrl = (realm: string, name: string) =>
   `https://www.warcraftlogs.com/character/us/${realm}/${encodeURIComponent(name.toLowerCase())}`;
 export const armoryUrl = (realm: string, name: string) =>

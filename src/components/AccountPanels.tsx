@@ -3,7 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AccountSummary } from "@/lib/types";
-import { CLASS_COLOR, CLASS_PT, fmtInt } from "@/lib/wow";
+import { CLASS_COLOR, CLASS_PT, fmtInt, tone } from "@/lib/wow";
 
 /** Personagens da mesma conta do jogador, com progressão e M+ de cada um. */
 export function AccountSection({
@@ -26,7 +26,7 @@ export function AccountSection({
         <span className="text-xs text-muted">ligada por {account.linkedBy.join(", ") || "—"}</span>
       </div>
       <dl className="grid grid-cols-3 gap-2">
-        <Stat label="Melhor mítico" value={`${account.bestMythic}/${totalBosses}`} />
+        <Stat label="Melhor mítico" value={`${account.bestMythic}/${totalBosses}`} toneClass={tone(totalBosses ? (account.bestMythic / totalBosses) * 100 : null)} />
         <Stat label="Melhor M+" value={fmtInt(account.bestMplus)} />
         <Stat label="Classes" value={String(account.classes.length || "—")} />
       </dl>
@@ -78,7 +78,7 @@ export function AccountSection({
                 </td>
                 <td className="py-1.5 text-right tabular">{ch.ilvl ? Math.round(ch.ilvl) : "—"}</td>
                 <td className="py-1.5 text-right tabular">
-                  {ch.mythic ?? 0}
+                  <span className={`font-semibold ${tone(totalBosses ? ((ch.mythic ?? 0) / totalBosses) * 100 : null)}`}>{ch.mythic ?? 0}</span>
                   <span className="text-muted">/{totalBosses}</span>
                 </td>
                 <td className="py-1.5 text-right tabular">{fmtInt(ch.mplus)}</td>
@@ -91,11 +91,11 @@ export function AccountSection({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, toneClass = "" }: { label: string; value: string; toneClass?: string }) {
   return (
     <div className="rounded-md bg-surface-2 px-2.5 py-2">
       <dt className="text-xs text-muted">{label}</dt>
-      <dd className="text-base font-semibold tabular">{value}</dd>
+      <dd className={`text-base font-semibold tabular ${toneClass}`}>{value}</dd>
     </div>
   );
 }

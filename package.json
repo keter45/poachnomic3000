@@ -1,7 +1,7 @@
 {
   "name": "poachnomic3000",
   "productName": "Poachnomic 3000",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Encontra raiders míticos em outras guildas de WoW: logs, progressão, M+, histórico e horário.",
   "author": "keter45",
   "homepage": "https://github.com/keter45/poachnomic3000",
@@ -38,5 +38,8 @@
     "react-dom": "19.2.8",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

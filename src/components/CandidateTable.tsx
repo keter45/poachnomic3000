@@ -2,9 +2,9 @@
 
 import { ArrowDown, ArrowUp, Star } from "lucide-react";
 import { useState } from "react";
-import type { ScorePart } from "@/lib/score";
-import type { Candidate, ScoreWeights } from "@/lib/types";
-import { CLASS_COLOR, fmtInt, parseTier, tenureLabel } from "@/lib/wow";
+import { mplusNorm, type ScorePart } from "@/lib/score";
+import type { Candidate, ScoreWeights, TierInfo } from "@/lib/types";
+import { CLASS_COLOR, fmtInt, parseTier, SCALE_STEPS, tenureLabel, tone } from "@/lib/wow";
 import type { Row, SortKey } from "./filters";
 
 const PAGE = 150;
@@ -31,6 +31,7 @@ export function CandidateTable({
   onToggleTarget,
   weights,
   totalBosses,
+  cutoffs,
 }: {
   rows: Row[];
   sort: { key: SortKey; dir: "asc" | "desc" };
@@ -39,6 +40,7 @@ export function CandidateTable({
   onToggleTarget: (row: Row) => void;
   weights: ScoreWeights;
   totalBosses: number;
+  cutoffs: TierInfo["cutoffs"];
 }) {
   const [limit, setLimit] = useState(PAGE);
   const visible = rows.slice(0, limit);
@@ -86,6 +88,7 @@ export function CandidateTable({
                 onToggleTarget={onToggleTarget}
                 weights={weights}
                 totalBosses={totalBosses}
+                cutoffs={cutoffs}
               />
             ))}
           </tbody>
@@ -115,12 +118,14 @@ function CandidateRow({
   onToggleTarget,
   weights,
   totalBosses,
+  cutoffs,
 }: {
   row: Row;
   onOpen: (id: string) => void;
   onToggleTarget: (row: Row) => void;
   weights: ScoreWeights;
   totalBosses: number;
+  cutoffs: TierInfo["cutoffs"];
 }) {
   const { c, s } = row;
   const tenure = tenureLabel(c.firstSeen, c.guildHistorySince);
@@ -210,7 +215,7 @@ function CandidateRow({
         )}
       </td>
       <td className="px-2 py-1.5 text-right">
-        <div className="text-base font-semibold tabular">{s.total ?? "—"}</div>
+        <div className={`text-base font-semibold tabular ${tone(s.total)}`}>{s.total ?? "—"}</div>
         <ScoreBar parts={s.parts} weights={weights} />
       </td>
       <td className="px-2 py-1.5 text-right tabular">
@@ -221,29 +226,35 @@ function CandidateRow({
         )}
       </td>
       <td className="px-2 py-1.5 text-right tabular">
-        {c.mythicKilled ?? "—"}
+        <span className={`font-semibold ${tone(pct(c.mythicKilled, totalBosses))}`}>{c.mythicKilled ?? "—"}</span>
         <span className="text-muted">/{totalBosses}</span>
         {c.account && c.account.bestMythic > (c.mythicKilled ?? 0) && (
-          <div className="text-[11px] text-muted">conta {c.account.bestMythic}</div>
+          <div className="text-[11px] text-muted">
+            conta <span className={`font-semibold ${tone(pct(c.account.bestMythic, totalBosses))}`}>{c.account.bestMythic}</span>
+          </div>
         )}
       </td>
       <td className="px-2 py-1.5 text-right tabular">
-        {fmtInt(c.mplusScore)}
+        <span className={`font-semibold ${tone(mplusNorm(c.mplusScore, cutoffs))}`}>{fmtInt(c.mplusScore)}</span>
         {c.account && c.account.bestMplus > (c.mplusScore ?? 0) + 50 && (
-          <div className="text-[11px] text-muted">conta {fmtInt(c.account.bestMplus)}</div>
+          <div className="text-[11px] text-muted">
+            conta <span className={`font-semibold ${tone(mplusNorm(c.account.bestMplus, cutoffs))}`}>{fmtInt(c.account.bestMplus)}</span>
+          </div>
         )}
       </td>
       <td className="px-2 py-1.5 text-right tabular" title={historyTitle(c)}>
-        <div>{s.parts.history ?? "—"}</div>
+        <div className={`font-semibold ${tone(s.parts.history)}`}>{s.parts.history ?? "—"}</div>
         {ceCount(c) > 0 && <div className="text-[11px] text-muted">{ceCount(c)}× CE</div>}
       </td>
-      <td className="px-2 py-1.5 text-right tabular">{s.parts.schedule === null ? "—" : `${s.parts.schedule}%`}</td>
+      <td className="px-2 py-1.5 text-right tabular">
+        <span className={`font-semibold ${tone(s.parts.schedule)}`}>{s.parts.schedule === null ? "—" : `${s.parts.schedule}%`}</span>
+      </td>
       <td className="px-2 py-1.5 text-right tabular">
         {c.kind === "standalone" ? (
           <span className="text-xs text-muted">—</span>
         ) : c.guildLogsSource === "wcl" && c.guildMythicNights ? (
           <>
-            {c.nights}
+            <span className={`font-semibold ${tone(s.parts.attendance)}`}>{c.nights}</span>
             <span className="text-muted">/{c.guildMythicNights}</span>
           </>
         ) : (
@@ -292,6 +303,9 @@ function accountTitle(c: Candidate) {
   return [`Conta ${a.label}`, ...lines].join("\n");
 }
 
+/** 0–100 a partir de x/total, para colorir progressão. */
+const pct = (v: number | null, total: number) => (v === null || !total ? null : Math.round((v / total) * 100));
+
 const ceCount = (c: Candidate) => c.history?.filter((h) => h.ce).length ?? 0;
 
 function historyTitle(c: Candidate) {
@@ -325,6 +339,21 @@ function ScoreBar({ parts, weights }: { parts: Record<ScorePart, number | null>;
           />
         ),
       )}
+    </div>
+  );
+}
+
+/** Legenda da escala de cores (a mesma do parse da WCL) usada em todas as notas 0–100. */
+export function ScaleLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted" aria-label="Escala de cores das notas">
+      <span>Notas:</span>
+      {SCALE_STEPS.map((st) => (
+        <span key={st.tier} className="inline-flex items-center gap-1">
+          <span className={`h-2 w-2 rounded-full bg-parse-${st.tier}`} aria-hidden />
+          <span className={`font-medium parse-${st.tier}`}>{st.label}</span>
+        </span>
+      ))}
     </div>
   );
 }
