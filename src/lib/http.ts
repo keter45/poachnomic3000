@@ -1,12 +1,13 @@
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Serializa chamadas garantindo um intervalo mínimo entre elas. */
-export function createLimiter(minIntervalMs: number) {
+export function createLimiter(minIntervalMs: number | (() => number)) {
   let last = 0;
   let chain: Promise<unknown> = Promise.resolve();
   return function limit<T>(fn: () => Promise<T>): Promise<T> {
     const run = chain.then(async () => {
-      const wait = last + minIntervalMs - Date.now();
+      const interval = typeof minIntervalMs === "function" ? minIntervalMs() : minIntervalMs;
+      const wait = last + interval - Date.now();
       if (wait > 0) await sleep(wait);
       last = Date.now();
     });

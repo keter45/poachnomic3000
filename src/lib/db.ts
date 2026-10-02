@@ -2,7 +2,8 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+// no app desktop a pasta vem do Electron (dados do usuário); em dev fica em ./data
+const DATA_DIR = process.env.POACH_DATA_DIR || path.join(process.cwd(), "data");
 
 declare global {
   var __poachDb: Database.Database | undefined;

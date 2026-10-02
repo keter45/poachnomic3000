@@ -1,5 +1,6 @@
 import { cached, peekCache, putCache } from "./db";
 import { HttpError, sleep } from "./http";
+import { getKeys } from "./keys";
 import type { WclSummary } from "./types";
 
 const API = "https://www.warcraftlogs.com/api/v2/client";
@@ -20,7 +21,38 @@ declare global {
 const state = (globalThis.__wcl ??= {});
 
 export function wclConfigured() {
-  return Boolean(process.env.WCL_CLIENT_ID && process.env.WCL_CLIENT_SECRET);
+  const k = getKeys();
+  return Boolean(k.wclClientId && k.wclClientSecret);
+}
+
+/** Esquece o token atual (chamado quando o usuário troca as chaves). */
+export function resetWclAuth() {
+  state.token = undefined;
+  state.tokenExp = undefined;
+  state.budget = undefined;
+}
+
+async function requestToken(clientId: string, clientSecret: string) {
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=client_credentials",
+  });
+  if (!res.ok) throw new HttpError(res.status, TOKEN_URL, await res.text());
+  return (await res.json()) as { access_token: string; expires_in: number };
+}
+
+/** Testa um par ID/secret sem salvar. Devolve uma mensagem de erro legível, ou null se funcionou. */
+export async function testWclCredentials(clientId: string, clientSecret: string): Promise<string | null> {
+  try {
+    await requestToken(clientId.trim(), clientSecret.trim());
+    return null;
+  } catch (e) {
+    if (e instanceof HttpError && (e.status === 400 || e.status === 401))
+      return "A Warcraft Logs recusou o ID ou o secret. Confira se copiou os dois inteiros e se o client não foi criado como “Public Client”.";
+    return `Não consegui falar com a Warcraft Logs (${e instanceof Error ? e.message : e}). Verifique a internet e tente de novo.`;
+  }
 }
 
 export function wclBudget(): Budget | undefined {
@@ -34,15 +66,9 @@ export function onBudgetWait(fn: ((until: number | null) => void) | undefined) {
 
 async function token(): Promise<string> {
   if (state.token && state.tokenExp && Date.now() < state.tokenExp - 60_000) return state.token;
-  if (!wclConfigured()) throw new Error("WCL_CLIENT_ID / WCL_CLIENT_SECRET não configurados no .env.local");
-  const basic = Buffer.from(`${process.env.WCL_CLIENT_ID}:${process.env.WCL_CLIENT_SECRET}`).toString("base64");
-  const res = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=client_credentials",
-  });
-  if (!res.ok) throw new HttpError(res.status, TOKEN_URL, await res.text());
-  const j = (await res.json()) as { access_token: string; expires_in: number };
+  if (!wclConfigured()) throw new Error("Chave da Warcraft Logs não configurada — abra Configurações › Chaves de API");
+  const k = getKeys();
+  const j = await requestToken(k.wclClientId, k.wclClientSecret);
   state.token = j.access_token;
   state.tokenExp = Date.now() + j.expires_in * 1000;
   return j.access_token;

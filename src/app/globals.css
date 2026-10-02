@@ -120,6 +120,7 @@ dialog.sheet {
 dialog.modal {
   width: min(720px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
+  overflow: hidden; /* a rolagem fica no corpo do diálogo, não no diálogo inteiro */
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);

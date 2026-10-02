@@ -1,20 +1,25 @@
 {
   "name": "poachnomic3000",
+  "productName": "Poachnomic 3000",
   "version": "0.1.0",
+  "description": "Encontra raiders míticos em outras guildas de WoW: logs, progressão, M+, histórico e horário.",
+  "author": "keter45",
+  "homepage": "https://github.com/keter45/poachnomic3000",
   "private": true,
+  "main": "electron/main.cjs",
   "scripts": {
     "setup": "npm install && node scripts/setup.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "build:app": "next build && node scripts/prepare-standalone.mjs",
+    "app": "npm run build:app && electron .",
+    "dist": "npm run build:app && electron-builder",
+    "icon": "node scripts/make-icon.mjs"
   },
-  "dependencies": {
-    "better-sqlite3": "^13.0.3",
-    "lucide-react": "^1.49.0",
-    "next": "16.3.8",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+  "engines": {
+    "node": ">=22"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -22,12 +27,16 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "better-sqlite3": "^13.0.3",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "lucide-react": "^1.49.0",
+    "next": "16.3.8",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "tailwindcss": "^4",
     "typescript": "^5"
-  },
-  "engines": {
-    "node": ">=22"
   }
 }

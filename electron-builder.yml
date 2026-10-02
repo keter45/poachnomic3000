@@ -1,0 +1,60 @@
+# Instaladores do app desktop. O servidor Next (build standalone) vai como recurso extra em resources/server.
+appId: io.github.keter45.poachnomic3000
+productName: Poachnomic 3000
+copyright: Copyright © 2026 keter45
+directories:
+  output: release
+  buildResources: build
+files:
+  - electron/**/*
+  - package.json
+extraResources:
+  - from: .next/standalone
+    to: server
+    filter:
+      - "**/*"
+      - "!data/**"
+      - "!.env*"
+  # o electron-builder pula pastas node_modules em extraResources; esta entrada explícita leva as do servidor
+  - from: .next/standalone/node_modules
+    to: server/node_modules
+    filter:
+      - "**/*"
+npmRebuild: false
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: Poachnomic-3000-Setup-${version}.${ext}
+nsis:
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Poachnomic 3000
+  deleteAppDataOnUninstall: false
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.utilities
+  # sem certificado da Apple: assinatura ad-hoc (sem ela o app nem abre em Macs com chip Apple)
+  identity: "-"
+  hardenedRuntime: false
+  artifactName: Poachnomic-3000-${version}-mac-${arch}.${ext}
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: Utility
+  artifactName: Poachnomic-3000-${version}-linux-${arch}.${ext}
+
+publish:
+  provider: github
+  owner: keter45
+  repo: poachnomic3000
+  releaseType: draft

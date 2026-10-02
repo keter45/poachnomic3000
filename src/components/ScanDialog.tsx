@@ -107,9 +107,8 @@ export function ScanDialog({
         <div className="space-y-5 overflow-y-auto px-5 py-4 text-sm">
           {!wclConfigured && (
             <p role="alert" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2">
-              Warcraft Logs não configurada: preencha <code>WCL_CLIENT_ID</code> e <code>WCL_CLIENT_SECRET</code> no{" "}
-              <code>.env.local</code> e reinicie o <code>npm run dev</code>. Sem ela, o scan usa só o Raider.io (sem parses,
-              presença e horários).
+              Warcraft Logs não configurada: o scan vai usar só o Raider.io (sem parses, presença, horários e avulsos).
+              Adicione a chave em <strong>Configurações › Chaves de API</strong>.
             </p>
           )}
 

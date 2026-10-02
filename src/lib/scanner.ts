@@ -96,7 +96,9 @@ export function stopScan() {
 
 export async function loadTier(): Promise<TierInfo> {
   const existing = getSetting<TierInfo | null>("tier", null);
-  if (existing?.historyRaids && Date.now() - existing.updatedAt < 6 * 3600_000) return existing;
+  // sem zone da WCL no cache mas com chave configurada agora: recarrega (a chave pode ter sido adicionada depois)
+  const stale = existing && existing.wclZoneId === null && wcl.wclConfigured();
+  if (existing?.historyRaids && !stale && Date.now() - existing.updatedAt < 6 * 3600_000) return existing;
   const [raid] = await rio.currentRaids("us");
   if (!raid) throw new Error("Nenhum raid ativo encontrado no Raider.io");
   const history = (await rio.tierRaids("us"))
@@ -663,7 +665,7 @@ const NO_GUILD_LABEL = "sem guilda";
 export async function importReportLink(input: string) {
   const code = input.match(/reports\/([A-Za-z0-9]{16})/)?.[1] ?? input.trim().match(/^[A-Za-z0-9]{16}$/)?.[0];
   if (!code) throw new Error("Link inválido: cole um link de report da Warcraft Logs (…/reports/XXXXXXXXXXXXXXXX)");
-  if (!wcl.wclConfigured()) throw new Error("Configure a Warcraft Logs no .env.local para importar logs");
+  if (!wcl.wclConfigured()) throw new Error("Configure a chave da Warcraft Logs em Configurações › Chaves de API para importar logs");
   const tier = await loadTier();
   const rep = await wcl.importReport(code);
   if (!rep) throw new Error("Report não encontrado. A API só lê logs públicos e não listados — privados ficam de fora.");

@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, Loader2, Radar, SlidersHorizontal, X } from "lucide-react";
+import { Loader2, Radar, Settings2, SlidersHorizontal, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { scoreCandidate } from "@/lib/score";
 import type { Candidate, ScanParams, Settings, TierInfo } from "@/lib/types";
@@ -11,7 +11,7 @@ import { DetailSheet } from "./DetailSheet";
 import { FilterPanel } from "./FilterPanel";
 import { activeFilterCount, applyFilters, DEFAULT_FILTERS, type Filters, type Row, type SortKey, sortRows } from "./filters";
 import { ScanDialog, type ScanStatus } from "./ScanDialog";
-import { SettingsDialog } from "./SettingsDialog";
+import { type KeyStatus, SettingsDialog, type SettingsTab } from "./SettingsDialog";
 
 interface Meta {
   tier: TierInfo | null;
@@ -63,6 +63,12 @@ function Main() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("keys");
+  const [keys, setKeys] = useState<KeyStatus | null>(null);
+  const openSettings = (tab: SettingsTab) => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [scan, setScan] = useState<ScanStatus | null>(null);
 
@@ -70,6 +76,21 @@ function Main() {
     const m = (await fetch("/api/meta").then((r) => r.json())) as Meta;
     setMeta(m);
     setSettings(m.settings);
+    // primeira vez sem chave da WCL: abre direto o passo a passo (uma vez por sessão)
+    if (!m.wclConfigured) {
+      let shown = false;
+      try {
+        shown = sessionStorage.getItem("poach:onboarding") === "1";
+        sessionStorage.setItem("poach:onboarding", "1");
+      } catch {}
+      if (!shown) {
+        setSettingsTab("keys");
+        setSettingsOpen(true);
+      }
+    }
+  }, []);
+  const loadKeys = useCallback(async () => {
+    setKeys((await fetch("/api/keys").then((r) => r.json())) as KeyStatus);
   }, []);
   const loadCandidates = useCallback(async () => {
     try {
@@ -92,9 +113,10 @@ function Main() {
       loadMeta().catch((e) => setLoadError(String(e)));
       loadCandidates();
       loadScan();
+      loadKeys().catch(() => {});
     });
     return () => clearTimeout(t);
-  }, [loadMeta, loadCandidates, loadScan]);
+  }, [loadMeta, loadCandidates, loadScan, loadKeys]);
 
   // acompanha o scan e recarrega a lista enquanto ele roda
   const running = scan?.status === "running" || scan?.status === "stopping";
@@ -227,11 +249,11 @@ function Main() {
           )}
           <button
             type="button"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => openSettings(meta && !meta.wclConfigured ? "keys" : "schedule")}
             className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-sm font-medium hover:bg-surface-2"
           >
-            <Clock size={15} aria-hidden />
-            Nosso horário
+            <Settings2 size={15} aria-hidden />
+            Configurações
           </button>
           <button
             type="button"
@@ -264,13 +286,18 @@ function Main() {
       )}
 
       {meta && !meta.wclConfigured && (
-        <div role="alert" className="mx-4 mt-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm">
-          <strong className="font-semibold">Falta a chave da Warcraft Logs.</strong> Sem ela não há parses, presença, horários
-          nem jogadores avulsos. Crie um client em{" "}
-          <a href="https://www.warcraftlogs.com/api/clients" target="_blank" rel="noreferrer" className="font-medium underline">
-            warcraftlogs.com/api/clients
-          </a>
-          , cole o ID e o secret no <code>.env.local</code> e reinicie o <code>npm run dev</code>. Passo a passo no README.
+        <div role="alert" className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm">
+          <span className="flex-1">
+            <strong className="font-semibold">Falta a chave da Warcraft Logs.</strong> Sem ela não há parses, presença no raid,
+            horários nem jogadores avulsos.
+          </span>
+          <button
+            type="button"
+            onClick={() => openSettings("keys")}
+            className="rounded-md bg-accent px-3 py-1.5 font-semibold text-accent-fg hover:opacity-90"
+          >
+            Configurar agora
+          </button>
         </div>
       )}
 
@@ -369,7 +396,19 @@ function Main() {
         totalBosses={totalBosses}
         wclConfigured={meta?.wclConfigured ?? true}
       />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onSave={saveSettings} />
+      <SettingsDialog
+        open={settingsOpen}
+        tab={settingsTab}
+        onTab={setSettingsTab}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onSave={saveSettings}
+        keys={keys}
+        onKeysSaved={(k) => {
+          setKeys(k);
+          loadMeta();
+        }}
+      />
       <FiltersSheet open={filtersOpen} onClose={() => setFiltersOpen(false)}>
         {filterPanel}
       </FiltersSheet>

@@ -1,14 +1,17 @@
 import { cached } from "./db";
 import { createLimiter, fetchJson } from "./http";
+import { getKeys } from "./keys";
 
 const BASE = "https://raider.io";
 const H = 3600_000;
-const limit = createLimiter(process.env.RAIDERIO_API_KEY ? 120 : 250);
+// com chave o Raider.io aceita bem mais requisições por minuto
+const limit = createLimiter(() => (getKeys().raiderioKey ? 120 : 250));
 
 function url(path: string, params: Record<string, string | number | undefined>) {
   const u = new URL(BASE + path);
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") u.searchParams.set(k, String(v));
-  if (path.startsWith("/api/v1") && process.env.RAIDERIO_API_KEY) u.searchParams.set("access_key", process.env.RAIDERIO_API_KEY);
+  const key = getKeys().raiderioKey;
+  if (path.startsWith("/api/v1") && key) u.searchParams.set("access_key", key);
   return u.toString();
 }
 

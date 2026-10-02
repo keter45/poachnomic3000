@@ -1,80 +1,108 @@
 # Poachnomic 3000
 
-Scanner de guildas míticas de World of Warcraft para recrutamento ("poach"). Ele varre as guildas de um ou mais
-realms, monta o raid team real de cada uma pelos logs, dá uma nota para cada raider e mostra tudo numa lista com
-filtros, horários e contatos.
+Encontra raiders míticos em outras guildas de World of Warcraft para recrutamento ("poach"). Ele varre as guildas
+dos realms que você escolher, monta o raid team real de cada uma pelos logs, acha também jogadores avulsos que fazem
+mítico em pug e dá uma nota para cada um. Tudo aparece numa lista com filtros, horários, histórico e contatos.
 
-Uso pessoal, roda só em dev.
+## Baixar e instalar
 
-## Como rodar
+Baixe o instalador do seu sistema na página de
+**[Releases](https://github.com/keter45/poachnomic3000/releases/latest)**:
+
+| Sistema | Arquivo |
+| --- | --- |
+| Windows 10/11 | `Poachnomic-3000-Setup-<versão>.exe` |
+| macOS (Apple Silicon: M1, M2…) | `Poachnomic-3000-<versão>-mac-arm64.dmg` |
+| macOS (Intel) | `Poachnomic-3000-<versão>-mac-x64.dmg` |
+| Linux | `Poachnomic-3000-<versão>-linux-x86_64.AppImage` |
+
+O app ainda não tem assinatura digital paga, então o sistema avisa na primeira vez:
+
+- **Windows**: se aparecer "O Windows protegeu o computador", clique em **Mais informações › Executar assim mesmo**.
+  O instalador não pede permissão de administrador e cria um atalho na área de trabalho.
+- **macOS**: arraste o app para **Aplicativos**. Na primeira vez, clique com o botão direito no app › **Abrir** ›
+  **Abrir**. Se aparecer "está danificado e não pode ser aberto", rode no Terminal e abra de novo:
+
+  ```bash
+  xattr -cr "/Applications/Poachnomic 3000.app"
+  ```
+
+- **Linux**: dê permissão de execução ao `.AppImage` (botão direito › Propriedades › Permitir executar, ou
+  `chmod +x` no terminal) e abra com dois cliques.
+
+### Primeiro uso
+
+Na primeira vez o app abre em **Configurações › Chaves de API** com um passo a passo para conectar a Warcraft Logs.
+É grátis e leva uns 2 minutos:
+
+1. Entre na sua conta da [Warcraft Logs](https://www.warcraftlogs.com) (ou crie uma) e abra
+   https://www.warcraftlogs.com/api/clients.
+2. Clique em **Create Client**. Dê qualquer nome, use `http://localhost` como *Redirect URL* e deixe
+   **Public Client desmarcado**.
+3. Copie o **Client ID** e o **Client Secret** para o app e clique em **Testar e salvar**.
+
+Depois clique em **Escanear**, escolha os realms e pronto. A chave do Raider.io é opcional.
+
+As chaves e os dados ficam só no seu computador, na pasta de dados do app:
+
+- Windows: `%APPDATA%\Poachnomic 3000`
+- macOS: `~/Library/Application Support/Poachnomic 3000`
+- Linux: `~/.config/Poachnomic 3000`
+
+Desinstalar o app não apaga essa pasta. Para começar do zero, apague-a.
+
+## Rodar a partir do código
+
+Para quem quer mexer no projeto.
 
 ### Pré-requisitos
 
 - **Node.js 22 ou mais novo** ([nodejs.org](https://nodejs.org)). Confira com `node -v`. Com o
   [nvm](https://github.com/nvm-sh/nvm), `nvm use` lê a versão do `.nvmrc`.
 - **Git**.
-- Uma conta gratuita na [Warcraft Logs](https://www.warcraftlogs.com) para gerar a chave da API.
 
-### 1. Clonar e instalar
+### Instalar e rodar
 
 ```bash
 git clone https://github.com/keter45/poachnomic3000.git
 cd poachnomic3000
 npm run setup
-```
-
-O `npm run setup` instala as dependências, confere a versão do Node e cria o `.env.local` a partir do
-`.env.example`. O `.env.local` fica fora do git, então suas chaves nunca são commitadas.
-
-### 2. Chave da Warcraft Logs
-
-A WCL é obrigatória para parses, presença no raid, horários e jogadores avulsos. Sem ela o app até abre, mas só
-com dados do Raider.io.
-
-1. Entre na sua conta da Warcraft Logs e abra https://www.warcraftlogs.com/api/clients.
-2. Clique em **Create Client** e preencha:
-   - **Name**: qualquer nome, por exemplo `poachnomic`.
-   - **Redirect URLs**: `http://localhost`. O app não usa login, então qualquer URL serve.
-   - **Public Client**: deixe **desmarcado**. Cliente público não tem secret e não funciona aqui.
-3. Salve. A página mostra o **Client ID** e o **Client Secret**.
-4. Abra o `.env.local` na raiz do projeto e cole os dois valores:
-
-   ```
-   WCL_CLIENT_ID=9a1b2c3d-...
-   WCL_CLIENT_SECRET=abc123...
-   ```
-
-   Sem aspas e sem espaços em volta do `=`.
-
-Trate o secret como uma senha: não cole em issues, prints ou chats. Se ele vazar, gere outro na mesma página.
-
-### 3. Chave do Raider.io (opcional)
-
-O Raider.io funciona sem chave. Uma chave (`RAIDERIO_API_KEY`) só aumenta o limite de requisições, o que deixa
-scans grandes um pouco mais rápidos. Ela é gerada no painel de aplicações da sua conta do Raider.io. Pode deixar
-o campo vazio.
-
-### 4. Rodar
-
-```bash
 npm run dev
 ```
 
-Abra http://localhost:3000, clique em **Escanear**, escolha os realms e inicie. Os personagens aparecem conforme
-cada guilda termina. Se você mexer no `.env.local` com o servidor rodando, pare (`Ctrl+C`) e rode `npm run dev` de
-novo: as variáveis só são lidas na inicialização.
+Abra http://localhost:3000. As chaves podem ser configuradas na própria tela (**Configurações › Chaves de API**),
+igual ao app instalado. Quem preferir pode usar o `.env.local` criado pelo `npm run setup`
+(`WCL_CLIENT_ID`, `WCL_CLIENT_SECRET`, `RAIDERIO_API_KEY`). A chave salva no app tem prioridade. Em dev, os dados
+ficam em `data/poach.db`.
 
-Os dados ficam em `data/poach.db` (SQLite, fora do git). Apagar a pasta `data/` zera o cache e começa do zero.
+### Gerar o app desktop
+
+| Comando | O que faz |
+| --- | --- |
+| `npm run app` | Gera o build e abre o app desktop (Electron) localmente |
+| `npm run dist` | Gera o instalador do sistema atual em `release/` |
+| `npm run icon` | Regera o ícone (`build/icon.png`) |
+
+O app desktop roda o servidor Next (build `standalone`) num processo interno, só em `127.0.0.1`, e guarda os dados
+na pasta de dados do usuário.
+
+### Publicar uma versão
+
+1. Atualize o campo `version` no `package.json` e faça o commit.
+2. Crie e envie a tag: `git tag v0.2.0 && git push origin v0.2.0`.
+3. O workflow **Release** do GitHub Actions gera os instaladores de Windows, macOS e Linux e anexa a um release em
+   rascunho.
+4. Revise o rascunho em *Releases*, escreva as notas e publique.
 
 ### Problemas comuns
 
 | Sintoma | Causa e solução |
 | --- | --- |
-| Faixa amarela "Falta a chave da Warcraft Logs" | `.env.local` sem `WCL_CLIENT_ID`/`WCL_CLIENT_SECRET`, ou servidor não reiniciado depois de editar. |
-| Scan falha com `HTTP 401` / `invalid_client` | ID ou secret errados, ou o client foi criado como **Public Client**. Crie outro com a opção desmarcada. |
-| `npm install` falha no `better-sqlite3` | Node abaixo do 22. Atualize o Node e rode `npm run setup` de novo. |
+| "A Warcraft Logs recusou o ID ou o secret" | Copie os dois de novo. Se persistir, o client foi criado como **Public Client**: crie outro com a opção desmarcada. |
 | "Esperando a cota da Warcraft Logs" no scan | Normal: a WCL libera 3.600 pontos por hora. O scan continua sozinho quando a cota renova. |
-| Porta 3000 ocupada | `npm run dev -- -p 3001` e abra http://localhost:3001. |
+| `npm install` falha no `better-sqlite3` | Node abaixo do 22. Atualize o Node e rode `npm run setup` de novo. |
+| Porta 3000 ocupada (dev) | `npm run dev -- -p 3001` e abra http://localhost:3001. |
+| O app desktop não abre | O log do servidor interno fica em `logs/server.log`, dentro da pasta de dados do app. |
 
 ## O que ele faz
 
@@ -137,10 +165,13 @@ rápidos.
 ## Estrutura
 
 - `src/lib/raiderio.ts`, `src/lib/wcl.ts`: clientes das APIs, com cache em SQLite e throttle.
-- `src/lib/scanner.ts`: o job de scan (roda dentro do `next dev`).
+- `src/lib/scanner.ts`: o job de scan (roda dentro do servidor Next).
+- `src/lib/keys.ts`: chaves de API salvas no banco local (com o `.env.local` como alternativa).
 - `src/lib/candidates.ts`: monta as linhas da lista.
 - `src/lib/score.ts`: o score, calculado no cliente para os pesos responderem na hora.
-- `src/components/`: a interface (tabela, filtros, detalhe, scan, horário).
+- `src/components/`: a interface (tabela, filtros, detalhe, scan, configurações).
+- `electron/main.cjs`: o app desktop, que sobe o servidor e abre a janela.
+- `electron-builder.yml` e `.github/workflows/release.yml`: instaladores e release.
 
 Parte dos dados vem de endpoints internos do site do Raider.io (roster, detalhes da guilda e redes sociais). Eles
 podem mudar sem aviso. Se quebrarem, o scan segue sem esses campos.

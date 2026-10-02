@@ -18,12 +18,10 @@ if (fs.existsSync(".env.local")) {
 const env = fs.readFileSync(".env.local", "utf8");
 const filled = (key) => new RegExp(`^${key}=\\S+`, "m").test(env);
 if (filled("WCL_CLIENT_ID") && filled("WCL_CLIENT_SECRET")) {
-  console.log("✓ Chaves da Warcraft Logs preenchidas");
+  console.log("✓ Chaves da Warcraft Logs preenchidas no .env.local");
   console.log("\nPronto. Rode: npm run dev");
 } else {
-  console.log("\n→ Falta a chave da Warcraft Logs:");
-  console.log("  1. Entre em https://www.warcraftlogs.com/api/clients e clique em “Create Client”");
-  console.log("  2. Copie o Client ID e o Client Secret para WCL_CLIENT_ID e WCL_CLIENT_SECRET no .env.local");
-  console.log("  3. Rode: npm run dev");
-  console.log("\n  Passo a passo completo no README, seção “Chave da Warcraft Logs”.");
+  console.log("\nPronto. Rode: npm run dev");
+  console.log("Na primeira vez o app abre em Configurações › Chaves de API com o passo a passo da Warcraft Logs.");
+  console.log("(Se preferir, preencha WCL_CLIENT_ID e WCL_CLIENT_SECRET no .env.local.)");
 }
