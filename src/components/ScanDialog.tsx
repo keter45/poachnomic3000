@@ -298,6 +298,24 @@ export function ScanDialog({
             </p>
           )}
 
+          <section aria-labelledby="accounts-title" className="space-y-2 border-t border-line pt-4">
+            <h3 id="accounts-title" className="font-medium">
+              Atualizar contas
+            </h3>
+            <p className="text-xs text-muted">
+              Agrupa em contas os personagens que já estão na lista e busca os outros personagens de cada jogador no
+              Raider.io. Não gasta pontos da Warcraft Logs.
+            </p>
+            <button
+              type="button"
+              disabled={running}
+              onClick={async () => setError(await onStart({ ...p, accountsOnly: true }))}
+              className="rounded-md border border-line px-3 py-1.5 font-medium hover:bg-surface-2 disabled:opacity-50"
+            >
+              Atualizar contas
+            </button>
+          </section>
+
           <section aria-labelledby="import-title" className="space-y-2 border-t border-line pt-4">
             <h3 id="import-title" className="font-medium">
               Importar log por link

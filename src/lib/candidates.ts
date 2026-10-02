@@ -1,6 +1,7 @@
 import { db, getSetting } from "./db";
 import { addPoint, emptyWeek } from "./schedule";
-import type { Candidate, RaidHistory, Socials, TierInfo, WclSummary } from "./types";
+import type { RioAccountCharacter } from "./raiderio";
+import type { AccountCharacter, AccountSummary, Candidate, RaidHistory, Socials, TierInfo, WclSummary } from "./types";
 
 interface CharRow {
   name: string | null;
@@ -22,6 +23,7 @@ interface CharRow {
   recruiting: number | null;
   seen_samples: string | null;
   history: string | null;
+  rio_user: string | null;
   updated_at: number | null;
   t_status: string | null;
   t_note: string | null;
@@ -63,7 +65,7 @@ interface StandaloneRow extends CharRow {
 const parse = <T>(s: string | null): T | null => (s ? (JSON.parse(s) as T) : null);
 
 const CHAR_COLS = `c.name, c.realm_slug, c.realm_name, c.class, c.spec, c.role, c.ilvl, c.thumbnail, c.profile_url, c.rio_guild,
-  c.mplus_score, c.rio_mythic_killed, c.wcl, c.socials, c.main_character, c.bio, c.recruiting, c.seen_samples, c.history, c.updated_at,
+  c.mplus_score, c.rio_mythic_killed, c.wcl, c.socials, c.main_character, c.bio, c.recruiting, c.seen_samples, c.history, c.rio_user, c.updated_at,
   t.status as t_status, t.note as t_note`;
 
 /** Campos do personagem comuns aos dois tipos de linha. */
@@ -94,6 +96,8 @@ function characterFields(id: string, c: CharRow, tier: TierInfo | null, extraKil
     recruiting: Boolean(c.recruiting),
     rioGuild: rgName ? { name: rgName, realm: rgRealm } : null,
     history: parse<RaidHistory[]>(c.history),
+    rioUser: c.rio_user,
+    account: null as AccountSummary | null,
     target: c.t_status ? { status: c.t_status, note: c.t_note } : null,
     updatedAt: c.updated_at,
   };
@@ -215,7 +219,115 @@ export function listCandidates(): Candidate[] {
       otherGuilds: [],
     });
   }
-  return out;
+  return attachAccounts(out as (Candidate & { rioUser: string | null })[]);
+}
+
+/**
+ * Junta personagens da mesma pessoa (union-find) por: usuário do Raider.io, BattleTag, Discord e main declarado.
+ * Cada candidato recebe o resumo da conta, com o roster completo do Raider.io quando existe.
+ */
+function attachAccounts(list: (Candidate & { rioUser: string | null })[]): Candidate[] {
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let r = x;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    let c = x;
+    while (parent.get(c) !== r) {
+      const n = parent.get(c)!;
+      parent.set(c, r);
+      c = n;
+    }
+    return r;
+  };
+  const node = (x: string) => {
+    if (!parent.has(x)) parent.set(x, x);
+    return x;
+  };
+  const union = (a: string, b: string) => parent.set(find(node(a)), find(node(b)));
+
+  const how = new Map<string, Set<string>>(); // nó de chave → como ligou
+  const link = (id: string, key: string, label: string) => {
+    union(`char:${id}`, key);
+    how.set(key, (how.get(key) ?? new Set()).add(label));
+  };
+  for (const c of list) {
+    node(`char:${c.id}`);
+    if (c.rioUser) link(c.id, `rio:${c.rioUser.toLowerCase()}`, "Raider.io");
+    if (c.socials?.battletag) link(c.id, `bt:${c.socials.battletag.toLowerCase()}`, "BattleTag");
+    if (c.socials?.discord) link(c.id, `dc:${c.socials.discord.toLowerCase()}`, "Discord");
+    if (c.main) {
+      const mainId = `us/${c.main.realm}/${c.main.name.toLowerCase()}`;
+      if (mainId !== c.id) link(c.id, `char:${mainId}`, "main declarado");
+    }
+  }
+
+  const groups = new Map<string, (Candidate & { rioUser: string | null })[]>();
+  for (const c of list) {
+    const root = find(`char:${c.id}`);
+    groups.set(root, [...(groups.get(root) ?? []), c]);
+  }
+
+  const rosterOf = db().prepare("select characters from accounts where rio_user = ?");
+  for (const [root, members] of groups) {
+    const users = [...new Set(members.map((m) => m.rioUser).filter((u): u is string => Boolean(u)))];
+    const linkedBy = new Set<string>();
+    for (const [key, labels] of how) if (find(key) === root) labels.forEach((l) => linkedBy.add(l));
+
+    // roster: o do Raider.io (todas as contas do grupo) + os personagens listados
+    const chars = new Map<string, AccountCharacter>();
+    for (const u of users) {
+      const row = rosterOf.get(u) as { characters: string | null } | undefined;
+      const roster = (row?.characters ? JSON.parse(row.characters) : []) as RioAccountCharacter[];
+      const maxLevel = Math.max(0, ...roster.map((r) => r.level));
+      for (const r of roster) {
+        if (r.level < maxLevel) continue;
+        const id = `us/${r.realm}/${r.name.toLowerCase()}`;
+        chars.set(id, { id, name: r.name, realm: r.realm, realmName: r.realmName, class: r.class, spec: r.spec, ilvl: r.ilvl, mythic: r.mythic, mplus: r.mplus, listed: false });
+      }
+    }
+    for (const m of members) {
+      const prev = chars.get(m.id);
+      chars.set(m.id, {
+        id: m.id,
+        name: m.name,
+        realm: m.realmSlug,
+        realmName: m.realmName ?? prev?.realmName ?? null,
+        class: m.class ?? prev?.class ?? null,
+        spec: m.spec ?? prev?.spec ?? null,
+        ilvl: m.ilvl ?? prev?.ilvl ?? null,
+        mythic: Math.max(m.mythicKilled ?? 0, prev?.mythic ?? 0),
+        mplus: Math.max(m.mplusScore ?? 0, prev?.mplus ?? 0),
+        listed: true,
+      });
+    }
+    const all = [...chars.values()];
+    const bestIlvl = Math.max(0, ...all.map((c) => c.ilvl ?? 0));
+    const relevant = all
+      .filter((c) => c.listed || (c.mythic ?? 0) > 0 || (c.mplus ?? 0) >= 1000 || (c.ilvl ?? 0) >= bestIlvl - 15)
+      .sort((a, b) => Number(b.listed) - Number(a.listed) || (b.mythic ?? 0) - (a.mythic ?? 0) || (b.ilvl ?? 0) - (a.ilvl ?? 0))
+      .slice(0, 16);
+    const classes = [
+      ...new Set(relevant.filter((c) => c.class && ((c.mythic ?? 0) > 0 || (c.ilvl ?? 0) >= bestIlvl - 15)).map((c) => c.class as string)),
+    ];
+    const main = members.find((m) => m.main)?.main;
+    const account: AccountSummary = {
+      key: root,
+      rioUser: users[0] ?? null,
+      label: users[0] ?? members.find((m) => m.socials?.battletag)?.socials?.battletag ?? (main ? main.name : members[0].name),
+      linkedBy: [...linkedBy],
+      characters: relevant,
+      listed: members.map((m) => m.id),
+      bestMythic: Math.max(0, ...all.map((c) => c.mythic ?? 0)),
+      bestMplus: Math.max(0, ...all.map((c) => c.mplus ?? 0)),
+      classes,
+    };
+    // só vale chamar de "conta" quando há mais de um personagem conhecido
+    for (const m of members) m.account = all.length > 1 ? account : null;
+  }
+  return list.map(({ rioUser: _drop, ...c }) => {
+    void _drop;
+    return c;
+  });
 }
 
 export function guildCount() {

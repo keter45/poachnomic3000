@@ -144,6 +144,7 @@ async function run(params: ScanParams) {
   const tier = await loadTier();
   log("info", `Tier: ${tier.raidName} (${tier.totalBosses} bosses)${tier.wclZoneId ? ` · WCL zone ${tier.wclZoneId}` : " · sem WCL"}`);
   checkStop();
+  if (params.accountsOnly) return backfillAccounts(tier);
 
   // ---- lista de guildas ----
   job.state.phase = "Buscando guildas";
@@ -400,6 +401,30 @@ async function enrichCharacters(
     job.state.charsDone++;
     onEach?.();
   }
+  await refreshAccounts(chars.map((c) => c.id), tier);
+}
+
+/** Roster completo (Raider.io) das contas dos personagens dados — uma chamada por conta, cache de 24h. */
+export async function refreshAccounts(charIds: string[], tier: TierInfo) {
+  if (!charIds.length) return;
+  const d = db();
+  const users = new Set<string>();
+  const get = d.prepare("select rio_user from characters where id = ?");
+  for (const id of charIds) {
+    const u = (get.get(id) as { rio_user: string | null } | undefined)?.rio_user;
+    if (u) users.add(u);
+  }
+  const fresh = d.prepare("select fetched_at from accounts where rio_user = ?");
+  const put = d.prepare(
+    "insert into accounts(rio_user, characters, fetched_at) values(?, ?, ?) on conflict(rio_user) do update set characters = excluded.characters, fetched_at = excluded.fetched_at",
+  );
+  for (const u of users) {
+    checkStop();
+    const row = fresh.get(u) as { fetched_at: number } | undefined;
+    if (row && Date.now() - row.fetched_at < 24 * 3600_000) continue;
+    const list = await rio.userCharacters(u, tier.raidSlug).catch(() => null);
+    put.run(u, list ? JSON.stringify(list) : null, Date.now());
+  }
 }
 
 /** Progressão nos tiers anteriores: kills míticos deste personagem + AOTC/CE da conta. */
@@ -438,6 +463,13 @@ async function upsertCharacter(
     | { seen_samples: string | null; wcl: string | null }
     | undefined;
   const samples: number[] = prev?.seen_samples ? JSON.parse(prev.seen_samples) : [];
+  if (profile) {
+    const guild = profile.guild ? `${profile.guild.name}|${profile.guild.realm}` : null;
+    const last = d.prepare("select guild from guild_snapshots where char_id = ? order by seen_at desc limit 1").get(s.id) as
+      | { guild: string | null }
+      | undefined;
+    if (!last || last.guild !== guild) d.prepare("insert into guild_snapshots(char_id, guild, seen_at) values(?, ?, ?)").run(s.id, guild, Date.now());
+  }
   if (social?.loggedOutAt && !samples.includes(social.loggedOutAt)) samples.push(social.loggedOutAt);
 
   const mplus = profile?.mythic_plus_scores_by_season?.[0]?.scores.all ?? roster?.keystoneScores?.allScore ?? null;
@@ -447,8 +479,8 @@ async function upsertCharacter(
 
   d.prepare(
     `insert into characters(id, name, realm_slug, realm_name, region, class, spec, role, ilvl, thumbnail, profile_url, rio_guild, mplus_score,
-       rio_mythic_killed, wcl_hidden, wcl, socials, main_character, bio, recruiting, seen_samples, history, updated_at)
-     values(@id, @name, @realm, @realmName, 'us', @class, @spec, @role, @ilvl, @thumb, @url, @guild, @mplus, @killed, @hidden, @wcl, @socials, @main, @bio, @recruiting, @samples, @history, @now)
+       rio_mythic_killed, wcl_hidden, wcl, socials, main_character, bio, recruiting, seen_samples, history, rio_user, updated_at)
+     values(@id, @name, @realm, @realmName, 'us', @class, @spec, @role, @ilvl, @thumb, @url, @guild, @mplus, @killed, @hidden, @wcl, @socials, @main, @bio, @recruiting, @samples, @history, @rioUser, @now)
      on conflict(id) do update set name=excluded.name, realm_name=coalesce(excluded.realm_name, characters.realm_name),
        class=coalesce(excluded.class, characters.class), spec=coalesce(excluded.spec, characters.spec), role=coalesce(excluded.role, characters.role),
        ilvl=coalesce(excluded.ilvl, characters.ilvl), thumbnail=coalesce(excluded.thumbnail, characters.thumbnail),
@@ -457,7 +489,8 @@ async function upsertCharacter(
        wcl_hidden=coalesce(excluded.wcl_hidden, characters.wcl_hidden), wcl=coalesce(excluded.wcl, characters.wcl),
        socials=coalesce(excluded.socials, characters.socials), main_character=coalesce(excluded.main_character, characters.main_character),
        bio=coalesce(excluded.bio, characters.bio), recruiting=coalesce(excluded.recruiting, characters.recruiting),
-       history=coalesce(excluded.history, characters.history), seen_samples=excluded.seen_samples, updated_at=excluded.updated_at`,
+       history=coalesce(excluded.history, characters.history), rio_user=coalesce(excluded.rio_user, characters.rio_user),
+       seen_samples=excluded.seen_samples, updated_at=excluded.updated_at`,
   ).run({
     id: s.id,
     name: profile?.name ?? s.name,
@@ -486,6 +519,7 @@ async function upsertCharacter(
     main: social?.main ? JSON.stringify(social.main) : null,
     bio: social?.bio ?? null,
     recruiting: social ? Number(social.recruiting) : null,
+    rioUser: social?.rioUser ?? null,
     samples: JSON.stringify(samples.slice(-200)),
     history: (() => {
       const h = buildHistory(tier, profile);
@@ -688,4 +722,44 @@ export async function importReportLink(input: string) {
   saveStandalone(list, tier);
   await enrichCharacters(list, tier, { ...DEFAULT_SCAN }, true);
   return { title: rep.title, visibility: rep.visibility, players: list.length, mythic: mythic.length > 0 };
+}
+
+/** Busca o usuário do Raider.io (e redes) de todos os personagens já na lista e monta as contas. */
+async function backfillAccounts(tier: TierInfo) {
+  const d = db();
+  const ids = (
+    d
+      .prepare(
+        `select c.id, c.name, c.realm_slug from characters c
+          where c.id in (select gm.char_id from guild_members gm join guilds g on g.id = gm.guild_id where g.raid_slug = ?)
+             or c.id in (select char_id from standalone where raid_slug = ?)`,
+      )
+      .all(tier.raidSlug, tier.raidSlug) as { id: string; name: string; realm_slug: string }[]
+  );
+  job.state.guildsTotal = 0;
+  log("info", `Contas: atualizando ${ids.length} personagens pelo Raider.io`);
+  const upd = d.prepare(
+    "update characters set rio_user = ?, socials = ?, main_character = coalesce(?, main_character), bio = coalesce(?, bio), recruiting = ? where id = ?",
+  );
+  for (const c of ids) {
+    checkStop();
+    job.state.phase = `Contas: perfis ${job.state.charsDone + 1}/${ids.length}`;
+    job.state.current = c.name;
+    const social = await rio.characterSocial("us", c.realm_slug, c.name, tier.seasonSlug ?? undefined).catch(() => null);
+    if (social) {
+      upd.run(
+        social.rioUser,
+        JSON.stringify({ battletag: social.battletag, twitch: social.twitch, youtube: social.youtube, twitter: social.twitter, discord: social.discord }),
+        social.main ? JSON.stringify(social.main) : null,
+        social.bio,
+        Number(social.recruiting),
+        c.id,
+      );
+    }
+    job.state.charsDone++;
+  }
+  job.state.phase = "Contas: rosters";
+  await refreshAccounts(ids.map((c) => c.id), tier);
+  const n = (d.prepare("select count(*) n from accounts where characters is not null").get() as { n: number }).n;
+  log("info", `Contas: ${n} rosters do Raider.io carregados`);
 }

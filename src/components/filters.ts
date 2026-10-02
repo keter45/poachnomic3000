@@ -1,23 +1,20 @@
-import type { ScoreResult } from "@/lib/score";
+import { attendancePct, type ScoreResult, tenureMonths } from "@/lib/score";
 import type { Candidate } from "@/lib/types";
 
 export interface Filters {
   q: string;
   classes: string[];
   roles: string[];
-  minScore: number;
-  minLogs: number;
-  minProgress: number;
-  minMplus: number;
-  minSchedule: number;
-  minHistory: number;
+  /** faixas [mín, máx]; máx null = sem limite. Faixa ausente = filtro desligado */
+  ranges: Partial<Record<RangeKey, [number, number | null]>>;
   onlyCE: boolean;
   realms: string[];
   guild: string;
   onlySocials: boolean;
   onlyOutsideRoster: boolean;
   onlyRecruiting: boolean;
-  hideAlts: boolean;
+  /** uma linha por conta (o personagem de maior score); filtros de classe olham a conta toda */
+  groupAccounts: boolean;
   view: "all" | "guild" | "standalone" | "targets";
 }
 
@@ -25,19 +22,14 @@ export const DEFAULT_FILTERS: Filters = {
   q: "",
   classes: [],
   roles: [],
-  minScore: 0,
-  minLogs: 0,
-  minProgress: 0,
-  minMplus: 0,
-  minSchedule: 0,
-  minHistory: 0,
+  ranges: {},
   onlyCE: false,
   realms: [],
   guild: "",
   onlySocials: false,
   onlyOutsideRoster: false,
   onlyRecruiting: false,
-  hideAlts: true,
+  groupAccounts: true,
   view: "all",
 };
 
@@ -46,12 +38,7 @@ export function activeFilterCount(f: Filters) {
   if (f.q) n++;
   if (f.classes.length) n++;
   if (f.roles.length) n++;
-  if (f.minScore) n++;
-  if (f.minLogs) n++;
-  if (f.minProgress) n++;
-  if (f.minMplus) n++;
-  if (f.minSchedule) n++;
-  if (f.minHistory) n++;
+  n += Object.values(f.ranges ?? {}).filter((r) => r && (r[0] > 0 || r[1] !== null)).length;
   if (f.onlyCE) n++;
   if (f.realms.length) n++;
   if (f.guild) n++;
@@ -59,6 +46,32 @@ export function activeFilterCount(f: Filters) {
   if (f.onlyOutsideRoster) n++;
   if (f.onlyRecruiting) n++;
   return n;
+}
+
+export type RangeKey = "score" | "logs" | "progress" | "mplus" | "history" | "attendance" | "schedule" | "tenure";
+
+/** Valor de cada faixa filtrável (em unidades da própria métrica: %, bosses, score de M+, meses…). */
+export function rangeValue(key: RangeKey, c: Candidate, s: ScoreResult): number | null {
+  switch (key) {
+    case "score":
+      return s.total;
+    case "logs":
+      return s.parts.logs;
+    case "progress":
+      return c.mythicKilled === null && !c.account ? null : Math.max(c.mythicKilled ?? 0, c.account?.bestMythic ?? 0);
+    case "mplus":
+      return c.mplusScore === null && !c.account ? null : Math.max(c.mplusScore ?? 0, c.account?.bestMplus ?? 0);
+    case "history":
+      return s.parts.history;
+    case "attendance":
+      return attendancePct(c);
+    case "schedule":
+      return s.parts.schedule;
+    case "tenure": {
+      const m = tenureMonths(c);
+      return m === null ? null : Math.floor(m);
+    }
+  }
 }
 
 export interface Row {
@@ -73,31 +86,28 @@ export const hasSocials = (c: Candidate) =>
 
 export function applyFilters(rows: Row[], f: Filters): Row[] {
   const q = f.q.trim().toLowerCase();
-  const present = new Set(rows.map((r) => `${r.c.name.toLowerCase()}|${r.c.realmSlug}`));
   return rows.filter(({ c, s }) => {
     if (f.view === "targets" && !c.target) return false;
     if (f.view === "guild" && c.kind !== "guild") return false;
     if (f.view === "standalone" && c.kind !== "standalone") return false;
     if (q && !`${c.name} ${c.guildName ?? ""} ${c.rioGuild?.name ?? ""} ${c.realmName ?? ""}`.toLowerCase().includes(q)) return false;
-    if (f.classes.length && !f.classes.includes(c.class ?? "")) return false;
+    if (f.classes.length) {
+      const plays = f.groupAccounts && c.account ? [c.class ?? "", ...c.account.classes] : [c.class ?? ""];
+      if (!plays.some((cl) => f.classes.includes(cl))) return false;
+    }
     if (f.roles.length && !f.roles.includes(c.role ?? "")) return false;
-    if (f.minScore && (s.total ?? 0) < f.minScore) return false;
-    if (f.minLogs && (s.parts.logs ?? 0) < f.minLogs) return false;
-    if (f.minProgress && (c.mythicKilled ?? 0) < f.minProgress) return false;
-    if (f.minMplus && (c.mplusScore ?? 0) < f.minMplus) return false;
-    if (f.minSchedule && (s.parts.schedule ?? 0) < f.minSchedule) return false;
-    if (f.minHistory && (s.parts.history ?? 0) < f.minHistory) return false;
+    for (const [key, range] of Object.entries(f.ranges ?? {}) as [RangeKey, [number, number | null]][]) {
+      if (!range || (range[0] <= 0 && range[1] === null)) continue;
+      const v = rangeValue(key, c, s);
+      // com a faixa ligada, quem não tem o dado fica de fora
+      if (v === null || v < range[0] || (range[1] !== null && v > range[1])) return false;
+    }
     if (f.onlyCE && !c.history?.some((h) => h.ce)) return false;
     if (f.realms.length && !f.realms.includes(c.guildRealm ?? c.realmName ?? "")) return false;
     if (f.guild && c.guildId !== f.guild) return false;
     if (f.onlySocials && !hasSocials(c)) return false;
     if (f.onlyOutsideRoster && (c.kind !== "guild" || c.inRoster)) return false;
     if (f.onlyRecruiting && !c.recruiting) return false;
-    if (f.hideAlts && c.main) {
-      const isSelf = c.main.name.toLowerCase() === c.name.toLowerCase() && c.main.realm === c.realmSlug;
-      // esconde o alt só se o main também está na lista
-      if (!isSelf && present.has(`${c.main.name.toLowerCase()}|${c.main.realm}`)) return false;
-    }
     return true;
   });
 }
@@ -139,4 +149,20 @@ export function sortRows(rows: Row[], key: SortKey, dir: "asc" | "desc"): Row[] 
     if (vb === null) return -1;
     return (va < vb ? -1 : va > vb ? 1 : 0) * mul;
   });
+}
+
+/** Mantém uma linha por conta: a de maior score entre as que passaram nos filtros. */
+export function groupByAccount(rows: Row[]): Row[] {
+  const best = new Map<string, Row>();
+  const out: Row[] = [];
+  for (const r of rows) {
+    const key = r.c.account?.key;
+    if (!key) {
+      out.push(r);
+      continue;
+    }
+    const cur = best.get(key);
+    if (!cur || (r.s.total ?? -1) > (cur.s.total ?? -1)) best.set(key, r);
+  }
+  return [...out, ...best.values()];
 }

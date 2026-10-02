@@ -9,7 +9,7 @@ import { fmtInt } from "@/lib/wow";
 import { CandidateTable } from "./CandidateTable";
 import { DetailSheet } from "./DetailSheet";
 import { FilterPanel } from "./FilterPanel";
-import { activeFilterCount, applyFilters, DEFAULT_FILTERS, type Filters, type Row, type SortKey, sortRows } from "./filters";
+import { activeFilterCount, applyFilters, DEFAULT_FILTERS, type Filters, groupByAccount, type Row, type SortKey, sortRows } from "./filters";
 import { ScanDialog, type ScanStatus } from "./ScanDialog";
 import { type KeyStatus, SettingsDialog, type SettingsTab } from "./SettingsDialog";
 
@@ -159,7 +159,10 @@ function Main() {
     return scored;
   }, [candidates, settings, tier]);
 
-  const filtered = useMemo(() => sortRows(applyFilters(rows, filters), sort.key, sort.dir), [rows, filters, sort]);
+  const filtered = useMemo(() => {
+    const passed = applyFilters(rows, filters);
+    return sortRows(filters.groupAccounts ? groupByAccount(passed) : passed, sort.key, sort.dir);
+  }, [rows, filters, sort]);
   const realms = useMemo(
     () => [...new Set(rows.map((r) => r.c.guildRealm ?? r.c.realmName).filter((x): x is string => Boolean(x)))].sort(),
     [rows],
@@ -169,14 +172,17 @@ function Main() {
     for (const r of rows) if (r.c.guildId) m.set(r.c.guildId, `${r.c.guildName} (${r.c.guildRealm})`);
     return [...m.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [rows]);
+  // com o agrupamento ligado, as contagens são de jogadores (contas), não de personagens
+  const perAccount = (list: Row[]) => (filters.groupAccounts ? groupByAccount(list).length : list.length);
   const counts = useMemo(
     () => ({
-      all: rows.length,
-      guild: rows.filter((r) => r.c.kind === "guild").length,
-      standalone: rows.filter((r) => r.c.kind === "standalone").length,
-      targets: rows.filter((r) => r.c.target).length,
+      all: perAccount(rows),
+      guild: perAccount(rows.filter((r) => r.c.kind === "guild")),
+      standalone: perAccount(rows.filter((r) => r.c.kind === "standalone")),
+      targets: perAccount(rows.filter((r) => r.c.target)),
     }),
-    [rows],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, filters.groupAccounts],
   );
   const targetCount = counts.targets;
   const detailRow = useMemo(() => rows.find((r) => r.c.id === detailId) ?? null, [rows, detailId]);
@@ -338,7 +344,7 @@ function Main() {
             </button>
             <p className="ml-auto text-sm text-muted tabular" aria-live="polite">
               {candidates
-                ? `${fmtInt(filtered.length)} personagens · ${fmtInt(new Set(filtered.map((r) => r.c.guildId).filter(Boolean)).size)} guildas`
+                ? `${fmtInt(filtered.length)} ${filters.groupAccounts ? "jogadores" : "personagens"} · ${fmtInt(new Set(filtered.map((r) => r.c.guildId).filter(Boolean)).size)} guildas`
                 : ""}
             </p>
           </div>
@@ -385,7 +391,14 @@ function Main() {
         </main>
       </div>
 
-      <DetailSheet row={detailRow} settings={settings} tier={tier} onClose={() => setDetailId(null)} onTarget={setTarget} />
+      <DetailSheet
+        row={detailRow}
+        settings={settings}
+        tier={tier}
+        onClose={() => setDetailId(null)}
+        onTarget={setTarget}
+        onOpen={setDetailId}
+      />
       <ScanDialog
         open={scanOpen}
         onClose={() => setScanOpen(false)}

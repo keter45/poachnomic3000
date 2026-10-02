@@ -71,6 +71,9 @@ export const wclCharUrl = (realm: string, name: string) =>
   `https://www.warcraftlogs.com/character/us/${realm}/${encodeURIComponent(name.toLowerCase())}`;
 export const armoryUrl = (realm: string, name: string) =>
   `https://worldofwarcraft.blizzard.com/pt-br/character/us/${realm}/${encodeURIComponent(name.toLowerCase())}`;
+/** Só link: o WowProgress bloqueia acesso automatizado, então o app não lê o site — o usuário abre no navegador. */
+export const wowprogressUrl = (realm: string, name: string) =>
+  `https://www.wowprogress.com/character/us/${realm}/${encodeURIComponent(name)}`;
 export const rioCharUrl = (realm: string, name: string) =>
   `https://raider.io/characters/us/${realm}/${encodeURIComponent(name)}`;
 

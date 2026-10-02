@@ -262,11 +262,13 @@ export interface RioCharacterSocial {
   main: { name: string; realm: string } | null;
   recruiting: boolean;
   loggedOutAt: number | null;
+  /** usuário do Raider.io dono do personagem (mesmo valor em todos os personagens da conta) */
+  rioUser: string | null;
 }
 
 /** Dados do perfil público (redes sociais, main, bio) — endpoint interno do site. */
 export async function characterSocial(region: string, realm: string, name: string, season?: string) {
-  return cached(`rio:charsocial:${region}:${realm}:${name.toLowerCase()}`, 24 * H, async () => {
+  return cached(`rio:charsocial2:${region}:${realm}:${name.toLowerCase()}`, 24 * H, async () => {
     const data = await get<{
       characterDetails?: {
         character?: { recruitmentProfiles?: unknown[] };
@@ -280,6 +282,7 @@ export async function characterSocial(region: string, realm: string, name: strin
           main_character?: { name: string; realm: { slug: string } } | null;
         };
         meta?: { loggedOutAt?: string | null };
+        user?: { name?: string } | null;
       };
     }>(`/api/characters/${region}/${realm}/${encodeURIComponent(name)}`, { season });
     const d = data?.characterDetails;
@@ -296,7 +299,61 @@ export async function characterSocial(region: string, realm: string, name: strin
       main: c.main_character ? { name: c.main_character.name, realm: c.main_character.realm.slug } : null,
       recruiting: (d.character?.recruitmentProfiles?.length ?? 0) > 0,
       loggedOutAt: d.meta?.loggedOutAt ? Date.parse(d.meta.loggedOutAt) : null,
+      rioUser: s(d.user?.name),
     };
     return result;
+  });
+}
+
+export interface RioAccountCharacter {
+  name: string;
+  realm: string; // slug
+  realmName: string;
+  class: string;
+  spec: string | null;
+  role: string | null;
+  level: number;
+  ilvl: number;
+  /** bosses míticos no raid atual */
+  mythic: number;
+  mplus: number;
+}
+
+/**
+ * Todos os personagens que um usuário do Raider.io vinculou à conta (endpoint interno da página de perfil).
+ * Volta null se o perfil for privado ou não existir.
+ */
+export async function userCharacters(user: string, raidSlug: string): Promise<RioAccountCharacter[] | null> {
+  return cached(`rio:usercharacters:${user.toLowerCase()}:${raidSlug}`, 24 * H, async () => {
+    const data = await get<{
+      viewUserCharactersApi?: {
+        characters: {
+          character: {
+            name: string;
+            level: number;
+            class: { name: string };
+            spec?: { name: string; role: string } | null;
+            itemLevelEquipped: number;
+            realm: { slug: string; name: string };
+          };
+          raidProgress?: { raid: { slug: string }; progress: { mythic: number } };
+          keystoneScores?: { allScore: number };
+        }[];
+      };
+    }>("/api/user/view-characters", { name: user }).catch(() => null);
+    const list = data?.viewUserCharactersApi?.characters;
+    if (!list) return null;
+    return list.map((x) => ({
+      name: x.character.name,
+      realm: x.character.realm.slug,
+      realmName: x.character.realm.name,
+      class: x.character.class.name,
+      spec: x.character.spec?.name ?? null,
+      role: x.character.spec?.role?.toUpperCase() ?? null,
+      level: x.character.level,
+      ilvl: x.character.itemLevelEquipped,
+      mythic: x.raidProgress?.raid.slug === raidSlug ? (x.raidProgress.progress.mythic ?? 0) : 0,
+      mplus: x.keystoneScores?.allScore ?? 0,
+    }));
   });
 }

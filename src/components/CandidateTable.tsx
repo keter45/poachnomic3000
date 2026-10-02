@@ -158,14 +158,24 @@ function CandidateRow({
             <span className="h-8 w-8 shrink-0 rounded-md bg-surface-2" aria-hidden />
           )}
           <div className="min-w-0">
-            <button
-              type="button"
-              onClick={() => onOpen(c.id)}
-              className="block max-w-[14rem] truncate text-left font-medium hover:underline"
-              title={`${c.name}-${c.realmName ?? c.realmSlug}`}
-            >
-              {c.name}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => onOpen(c.id)}
+                className="block max-w-[12rem] truncate text-left font-medium hover:underline"
+                title={`${c.name}-${c.realmName ?? c.realmSlug}`}
+              >
+                {c.name}
+              </button>
+              {c.account && c.account.characters.length > 1 && (
+                <span
+                  className="shrink-0 rounded border border-line px-1 py-px text-[11px] font-medium text-muted"
+                  title={accountTitle(c)}
+                >
+                  +{c.account.characters.length - 1} na conta
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1.5 text-xs text-muted">
               <span className="h-2 w-2 shrink-0 rounded-full ring-1 ring-line" style={{ background: CLASS_COLOR[c.class ?? ""] ?? "var(--line)" }} aria-hidden />
               <span className="truncate">
@@ -213,8 +223,16 @@ function CandidateRow({
       <td className="px-2 py-1.5 text-right tabular">
         {c.mythicKilled ?? "—"}
         <span className="text-muted">/{totalBosses}</span>
+        {c.account && c.account.bestMythic > (c.mythicKilled ?? 0) && (
+          <div className="text-[11px] text-muted">conta {c.account.bestMythic}</div>
+        )}
       </td>
-      <td className="px-2 py-1.5 text-right tabular">{fmtInt(c.mplusScore)}</td>
+      <td className="px-2 py-1.5 text-right tabular">
+        {fmtInt(c.mplusScore)}
+        {c.account && c.account.bestMplus > (c.mplusScore ?? 0) + 50 && (
+          <div className="text-[11px] text-muted">conta {fmtInt(c.account.bestMplus)}</div>
+        )}
+      </td>
       <td className="px-2 py-1.5 text-right tabular" title={historyTitle(c)}>
         <div>{s.parts.history ?? "—"}</div>
         {ceCount(c) > 0 && <div className="text-[11px] text-muted">{ceCount(c)}× CE</div>}
@@ -252,17 +270,26 @@ function CandidateRow({
   );
 }
 
-const PART_ORDER: ScorePart[] = ["logs", "progress", "history", "mplus", "schedule"];
+const PART_ORDER: ScorePart[] = ["logs", "progress", "history", "attendance", "mplus", "schedule", "tenure"];
 const PART_SHADE: Record<ScorePart, string> = {
   logs: "100%",
-  progress: "80%",
-  history: "62%",
-  mplus: "45%",
-  schedule: "30%",
+  progress: "85%",
+  history: "70%",
+  attendance: "58%",
+  mplus: "46%",
+  schedule: "36%",
+  tenure: "28%",
 };
 
 function Badge({ children }: { children: React.ReactNode }) {
   return <span className="ml-1.5 rounded bg-accent-soft px-1 py-px text-[11px] font-medium text-text">{children}</span>;
+}
+
+function accountTitle(c: Candidate) {
+  const a = c.account;
+  if (!a) return "";
+  const lines = a.characters.map((ch) => `${ch.name} (${ch.class ?? "?"}) — ${ch.mythic ?? 0}M · M+ ${fmtInt(ch.mplus)}`);
+  return [`Conta ${a.label}`, ...lines].join("\n");
 }
 
 const ceCount = (c: Candidate) => c.history?.filter((h) => h.ce).length ?? 0;

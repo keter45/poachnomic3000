@@ -109,6 +109,24 @@ function migrate(d: Database.Database) {
   `);
   addColumn(d, "guilds", "history_since integer"); // início da janela de logs consultada (tempo de casa)
   addColumn(d, "characters", "history text"); // JSON RaidHistory[]: progressão nos tiers anteriores
+  addColumn(d, "characters", "rio_user text"); // usuário do Raider.io dono do personagem (chave de conta)
+
+  d.exec(`
+    -- roster completo de cada conta do Raider.io (JSON RioAccountCharacter[])
+    create table if not exists accounts (
+      rio_user text primary key,
+      characters text,
+      fetched_at integer
+    );
+    -- guilda in-game vista em cada scan: mostra trocas de guilda ao longo do tempo
+    create table if not exists guild_snapshots (
+      char_id text not null,
+      guild text,                       -- "Nome|Realm" ou null (sem guilda)
+      seen_at integer not null,
+      primary key (char_id, seen_at)
+    );
+    create index if not exists gs_char on guild_snapshots(char_id);
+  `);
 
   d.exec(`
     -- jogadores que fazem mítico fora de um raid team escaneado (pugs, guildas não míticas, logs importados)

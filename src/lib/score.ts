@@ -48,23 +48,49 @@ export function historyScore(history: RaidHistory[] | null): number | null {
   return Math.round(sum / wsum);
 }
 
+const MONTH = 30 * 24 * 3600_000;
+
+/** Presença (%) nas noites míticas logadas da guilda; null sem logs (avulsos, guildas que não logam). */
+export function attendancePct(c: Candidate): number | null {
+  if (c.kind !== "guild" || c.guildLogsSource !== "wcl" || !c.guildMythicNights) return null;
+  return Math.round((Math.min(c.nights, c.guildMythicNights) / c.guildMythicNights) * 100);
+}
+
+/** Meses desde o primeiro boss com a guilda nos logs (limite inferior quando ele já aparece no log mais antigo). */
+export function tenureMonths(c: Candidate): number | null {
+  if (c.kind !== "guild" || !c.firstSeen) return null;
+  return Math.max(0, (Date.now() - c.firstSeen) / MONTH);
+}
+
+/** Pouco tempo na guilda pontua alto (100 com menos de um mês) e cai até 0 com um ano ou mais. */
+export function tenureScore(months: number | null): number | null {
+  if (months === null) return null;
+  return Math.max(0, Math.round(100 - (months / 12) * 100));
+}
+
 export function scoreCandidate(c: Candidate, settings: Settings, tier: TierInfo | null): ScoreResult {
+  const killed = c.mythicKilled === null && !c.account ? null : Math.max(c.mythicKilled ?? 0, c.account?.bestMythic ?? 0);
+  const mplus = c.mplusScore === null && !c.account ? null : Math.max(c.mplusScore ?? 0, c.account?.bestMplus ?? 0);
   const parts: Record<ScorePart, number | null> = {
     logs: c.wcl && !c.wcl.hidden && c.wcl.bestAvg !== null ? Math.round(c.wcl.bestAvg) : null,
-    progress: c.mythicKilled !== null && tier ? Math.round((c.mythicKilled / tier.totalBosses) * 100) : null,
-    mplus: mplusNorm(c.mplusScore, tier?.cutoffs ?? null),
+    // progressão e M+ olham a conta inteira: um alt na lista não esconde o main 8/8
+    progress: killed !== null && tier ? Math.round((killed / tier.totalBosses) * 100) : null,
+    mplus: mplusNorm(mplus, tier?.cutoffs ?? null),
     schedule: c.activity ? scheduleCompat(toLocal(c.activity, settings.tzOffset), nightsToSlots(settings.ourNights)) : null,
     history: historyScore(c.history),
+    attendance: attendancePct(c),
+    tenure: tenureScore(tenureMonths(c)),
   };
   const w = settings.weights;
   let sum = 0;
   let wsum = 0;
   let wall = 0;
   for (const k of Object.keys(parts) as ScorePart[]) {
-    wall += w[k];
-    if (parts[k] === null) continue;
-    sum += (parts[k] as number) * w[k];
-    wsum += w[k];
+    const weight = w[k] ?? 0;
+    wall += weight;
+    if (parts[k] === null || !weight) continue;
+    sum += (parts[k] as number) * weight;
+    wsum += weight;
   }
   return { total: wsum > 0 ? Math.round(sum / wsum) : null, parts, coverage: wall > 0 ? wsum / wall : 0 };
 }
@@ -75,4 +101,6 @@ export const PART_LABEL: Record<ScorePart, string> = {
   mplus: "Mítica+",
   schedule: "Horário",
   history: "Histórico",
+  attendance: "Presença",
+  tenure: "Pouco tempo na guilda",
 };

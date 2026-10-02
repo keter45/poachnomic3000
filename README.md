@@ -120,6 +120,32 @@ na pasta de dados do usuário.
 6. **Importar log por link**: cole o link de um report (público ou não listado) e quem lutou contra bosses nele
    entra como avulso. Útil para pugs postados no Discord.
 
+### Contas (vários personagens, um jogador)
+
+A análise olha o **jogador**, não só o personagem. Personagens são agrupados numa conta quando têm o mesmo
+usuário do Raider.io (o dono vinculou os personagens ao perfil dele), a mesma BattleTag, o mesmo Discord ou
+quando um aponta o outro como main. Para cada conta o app busca no Raider.io a lista completa de personagens.
+
+- Por padrão a lista mostra **uma linha por jogador** (o personagem de maior score), com "+N na conta".
+- Progressão mítica e M+ do score usam o **melhor personagem da conta**: um alt na lista não esconde um main 8/8.
+- O filtro de classe considera todas as classes que o jogador joga em nível alto.
+- O detalhe mostra todos os personagens da conta com ilvl, progressão e M+.
+
+Para agrupar personagens que já estavam no banco antes desta versão, use **Escanear › Atualizar contas** (só
+Raider.io, não gasta pontos da WCL).
+
+### Histórico de guildas
+
+Ao abrir o detalhe, o app monta a linha do tempo de guildas do personagem pelos logs da Warcraft Logs (cada report
+diz a guilda e a data). Guildas com 3 raids ou mais contam como passagem pela guilda; menos que isso aparece como
+avulso (pug). O botão **Incluir os alts da conta** faz o mesmo para os principais alts. Custa uns 3 pontos da WCL
+por página de 100 logs e fica em cache por 7 dias. O app também registra a guilda no jogo a cada scan e mostra as
+trocas que observou.
+
+O [WowProgress](https://www.wowprogress.com) tem o histórico de entradas e saídas de guilda, mas bloqueia acesso
+automatizado com um desafio anti-bot. O app não tenta contornar isso: o detalhe tem um link para abrir a página do
+personagem no WowProgress no navegador.
+
 ### Histórico de tiers
 
 Para cada personagem aparecem os 4 últimos raids de tier (da expansão atual e da anterior), com os kills míticos
@@ -135,7 +161,8 @@ por link funciona com eles.
 
 ### Nosso score (0–100)
 
-Média ponderada (pesos ajustáveis na interface) das partes que têm dados:
+Média ponderada (pesos ajustáveis na interface) das partes que têm dados. Progressão e M+ usam o melhor personagem da conta.
+No menu lateral, cada métrica tem faixa de mínimo e máximo.
 
 | Parte | Como é calculada |
 | --- | --- |
@@ -144,6 +171,8 @@ Média ponderada (pesos ajustáveis na interface) das partes que têm dados:
 | Mítica+ | Score da season convertido pelos percentis do Raider.io (top 0,1% = 100, top 1% = 90, top 10% = 70…) |
 | Horário | Quanto do **nosso** horário de raid (configurável) bate com as horas em que o jogador aparece |
 | Histórico | Tiers anteriores, do mais recente ao mais antigo (pesos 4, 3, 2, 1): CE = 100; senão a fração de bosses míticos no personagem (até 90); AOTC sem mítico = 30 |
+| Presença | % das noites míticas logadas da guilda em que ele estava. Pouca presença indica banco ou pouco tempo de jogo |
+| Pouco tempo na guilda | Peso baixo por padrão: menos de 1 mês = 100, cai até 0 com 1 ano ou mais (quem chegou há pouco é mais fácil de trazer) |
 
 ### Estimativas (leia antes de confiar)
 

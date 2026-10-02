@@ -462,3 +462,60 @@ export async function importReport(code: string): Promise<ImportedReport | null>
     },
   };
 }
+
+// ---------- histórico de guildas ----------
+
+export interface GuildStint {
+  guild: string;
+  server: string | null;
+  first: number;
+  last: number;
+  /** reports de raid com essa guilda (os de M+ não contam para "raidou com") */
+  raids: number;
+  reports: number;
+  zones: string[];
+}
+
+/**
+ * Linha do tempo de guildas montada pelos logs do personagem (reports com tag de guilda).
+ * Custa ~3 pontos por página de 100 reports; cache de 7 dias.
+ */
+export async function characterGuildHistory(name: string, serverSlug: string): Promise<GuildStint[] | null> {
+  return cached(`wcl:guildhistory:${serverSlug}:${name.toLowerCase()}`, 7 * 24 * H, async () => {
+    const reports: { startTime: number; zone: { name: string } | null; guild: { name: string; server: { slug: string } } | null }[] = [];
+    for (let page = 1; page <= 6; page++) {
+      const d = await gql<{
+        characterData: {
+          character: {
+            recentReports: { has_more_pages: boolean; data: typeof reports } | null;
+          } | null;
+        };
+      }>(
+        `query($n: String, $s: String, $p: Int) { characterData { character(name: $n, serverSlug: $s, serverRegion: "us") { recentReports(limit: 100, page: $p) { has_more_pages data { startTime zone { name } guild { name server { slug } } } } } } }`,
+        { n: name, s: serverSlug, p: page },
+      );
+      const rr = d.characterData.character?.recentReports;
+      if (!d.characterData.character) return null;
+      if (!rr) break;
+      reports.push(...rr.data);
+      if (!rr.has_more_pages) break;
+    }
+    const map = new Map<string, GuildStint>();
+    for (const r of reports) {
+      if (!r.guild) continue;
+      const key = `${r.guild.name}|${r.guild.server.slug}`;
+      let s = map.get(key);
+      if (!s) {
+        s = { guild: r.guild.name, server: r.guild.server.slug, first: r.startTime, last: r.startTime, raids: 0, reports: 0, zones: [] };
+        map.set(key, s);
+      }
+      s.first = Math.min(s.first, r.startTime);
+      s.last = Math.max(s.last, r.startTime);
+      s.reports++;
+      const zone = r.zone?.name ?? "";
+      if (zone && !/mythic\+/i.test(zone)) s.raids++;
+      if (zone && !s.zones.includes(zone)) s.zones.push(zone);
+    }
+    return [...map.values()].sort((a, b) => b.last - a.last);
+  });
+}

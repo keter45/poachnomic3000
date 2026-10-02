@@ -32,6 +32,8 @@ export interface ScanParams {
   /** procurar jogadores que fazem mítico fora de um raid team (pugs) */
   findStandalone: boolean;
   maxStandalone: number;
+  /** só agrupar em contas os personagens já escaneados (usa só o Raider.io, sem pontos da WCL) */
+  accountsOnly?: boolean;
 }
 
 export const DEFAULT_SCAN: ScanParams = {
@@ -109,6 +111,37 @@ export interface StandaloneInfo {
   reports: string[];
 }
 
+export interface AccountCharacter {
+  id: string;
+  name: string;
+  realm: string;
+  realmName: string | null;
+  class: string | null;
+  spec: string | null;
+  ilvl: number | null;
+  /** bosses míticos do tier atual neste personagem */
+  mythic: number | null;
+  mplus: number | null;
+  /** está na nossa lista (raid team escaneado ou avulso) */
+  listed: boolean;
+}
+
+/** Conta do jogador: personagens ligados por usuário do Raider.io, BattleTag, Discord ou main declarado. */
+export interface AccountSummary {
+  key: string;
+  rioUser: string | null;
+  label: string;
+  /** como os personagens foram ligados: "Raider.io", "BattleTag", "Discord", "main declarado" */
+  linkedBy: string[];
+  characters: AccountCharacter[];
+  /** ids dos personagens desta conta que estão na lista */
+  listed: string[];
+  bestMythic: number;
+  bestMplus: number;
+  /** classes que ele joga em nível alto (ilvl perto do melhor ou com kill mítico) */
+  classes: string[];
+}
+
 /** Uma linha da lista principal: personagem + guilda onde ele raida (ou avulso). */
 export interface Candidate {
   id: string;
@@ -134,6 +167,7 @@ export interface Candidate {
   rioGuild: { name: string; realm: string } | null;
   history: RaidHistory[] | null;
   standalone: StandaloneInfo | null;
+  account: AccountSummary | null;
   // --- vínculo com a guilda onde raida (null para avulsos) ---
   guildId: string | null;
   guildName: string | null;
@@ -166,6 +200,10 @@ export interface ScoreWeights {
   mplus: number;
   schedule: number;
   history: number;
+  /** presença nas noites míticas da guilda */
+  attendance: number;
+  /** pouco tempo na guilda = mais fácil de trazer */
+  tenure: number;
 }
 
 export interface RaidNight {
@@ -182,7 +220,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  weights: { logs: 35, progress: 25, mplus: 15, schedule: 10, history: 15 },
+  weights: { logs: 35, progress: 25, mplus: 15, schedule: 10, history: 15, attendance: 15, tenure: 5 },
   // padrão: Ter/Qua/Qui 20h–00h
   ourNights: [2, 3, 4].map((day) => ({ day, from: 20, to: 24 })),
   tzOffset: -3,

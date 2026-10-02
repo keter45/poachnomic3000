@@ -15,7 +15,9 @@ import {
   socialLinks,
   tenureLabel,
   wclCharUrl,
+  wowprogressUrl,
 } from "@/lib/wow";
+import { AccountSection, GuildHistorySection } from "./AccountPanels";
 import { hasSocials, type Row } from "./filters";
 import { ScheduleGrid, ScheduleLegend } from "./ScheduleGrid";
 
@@ -39,12 +41,14 @@ export function DetailSheet({
   tier,
   onClose,
   onTarget,
+  onOpen,
 }: {
   row: Row | null;
   settings: Settings;
   tier: TierInfo | null;
   onClose: () => void;
   onTarget: (charId: string, status: string | null, note?: string | null) => void;
+  onOpen: (id: string) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -62,7 +66,17 @@ export function DetailSheet({
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
     >
-      {row && <Detail key={row.c.id} row={row} settings={settings} tier={tier} onClose={onClose} onTarget={onTarget} />}
+      {row && (
+        <Detail
+          key={row.c.id}
+          row={row}
+          settings={settings}
+          tier={tier}
+          onClose={onClose}
+          onTarget={onTarget}
+          onOpen={onOpen}
+        />
+      )}
     </dialog>
   );
 }
@@ -73,12 +87,14 @@ function Detail({
   tier,
   onClose,
   onTarget,
+  onOpen,
 }: {
   row: Row;
   settings: Settings;
   tier: TierInfo | null;
   onClose: () => void;
   onTarget: (charId: string, status: string | null, note?: string | null) => void;
+  onOpen: (id: string) => void;
 }) {
   const { c, s } = row;
   const total = tier?.totalBosses ?? 0;
@@ -114,6 +130,7 @@ function Detail({
             <ExtLink href={wclCharUrl(c.realmSlug, c.name)}>Warcraft Logs</ExtLink>
             <ExtLink href={c.profileUrl ?? rioCharUrl(c.realmSlug, c.name)}>Raider.io</ExtLink>
             <ExtLink href={armoryUrl(c.realmSlug, c.name)}>Armory</ExtLink>
+            <ExtLink href={wowprogressUrl(c.realmSlug, c.name)}>WowProgress</ExtLink>
           </nav>
         </div>
         <button
@@ -229,6 +246,10 @@ function Detail({
             </dl>
           </section>
         )}
+
+        {c.account && <AccountSection account={c.account} currentId={c.id} totalBosses={total} onOpen={onOpen} />}
+
+        <GuildHistorySection charId={c.id} hasAccount={Boolean(c.account?.rioUser)} />
 
         {/* histórico */}
         <section aria-labelledby="sec-history" className="space-y-2">

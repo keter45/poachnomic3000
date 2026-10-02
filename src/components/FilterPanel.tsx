@@ -3,7 +3,7 @@
 import { PART_LABEL, type ScorePart } from "@/lib/score";
 import type { ScoreWeights } from "@/lib/types";
 import { CLASS_COLOR, CLASS_PT, CLASSES, ROLES } from "@/lib/wow";
-import { activeFilterCount, DEFAULT_FILTERS, type Filters } from "./filters";
+import { activeFilterCount, DEFAULT_FILTERS, type Filters, type RangeKey } from "./filters";
 
 export function FilterPanel({
   filters,
@@ -23,6 +23,12 @@ export function FilterPanel({
   totalBosses: number;
 }) {
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => onChange({ ...filters, [k]: v });
+  const setRange = (k: RangeKey, r: [number, number | null] | undefined) => {
+    const ranges = { ...filters.ranges };
+    if (r && (r[0] > 0 || r[1] !== null)) ranges[k] = r;
+    else delete ranges[k];
+    onChange({ ...filters, ranges });
+  };
   const toggle = (k: "classes" | "roles" | "realms", v: string) =>
     set(k, filters[k].includes(v) ? filters[k].filter((x) => x !== v) : [...filters[k], v]);
   const active = activeFilterCount(filters);
@@ -76,26 +82,47 @@ export function FilterPanel({
         </div>
       </fieldset>
 
-      <fieldset className="space-y-3">
-        <legend className="mb-2 font-medium">Mínimos</legend>
-        <Range label="Nosso score" value={filters.minScore} max={100} onChange={(v) => set("minScore", v)} />
-        <Range label="Logs (parse médio)" value={filters.minLogs} max={100} onChange={(v) => set("minLogs", v)} />
-        <Range
-          label="Bosses míticos"
-          value={filters.minProgress}
+      <fieldset className="space-y-4">
+        <legend className="mb-2 font-medium">Faixas</legend>
+        <RangePair label="Nosso score" range={filters.ranges.score} max={100} step={5} onChange={(r) => setRange("score", r)} />
+        <RangePair label="Logs (parse médio)" range={filters.ranges.logs} max={100} step={5} onChange={(r) => setRange("logs", r)} />
+        <RangePair
+          label="Bosses míticos (melhor da conta)"
+          range={filters.ranges.progress}
           max={totalBosses}
           format={(v) => `${v}/${totalBosses}`}
-          onChange={(v) => set("minProgress", v)}
+          onChange={(r) => setRange("progress", r)}
         />
-        <Range label="Score de M+" value={filters.minMplus} max={4000} step={100} onChange={(v) => set("minMplus", v)} />
-        <Range label="Histórico (tiers anteriores)" value={filters.minHistory} max={100} step={5} onChange={(v) => set("minHistory", v)} />
-        <Range
-          label="Compatível com nosso horário"
-          value={filters.minSchedule}
+        <RangePair label="Score de M+" range={filters.ranges.mplus} max={4000} step={100} onChange={(r) => setRange("mplus", r)} />
+        <RangePair
+          label="Histórico (tiers anteriores)"
+          range={filters.ranges.history}
+          max={100}
+          step={5}
+          onChange={(r) => setRange("history", r)}
+        />
+        <RangePair
+          label="Presença nas noites da guilda"
+          range={filters.ranges.attendance}
           max={100}
           step={5}
           format={(v) => `${v}%`}
-          onChange={(v) => set("minSchedule", v)}
+          onChange={(r) => setRange("attendance", r)}
+        />
+        <RangePair
+          label="Compatível com nosso horário"
+          range={filters.ranges.schedule}
+          max={100}
+          step={5}
+          format={(v) => `${v}%`}
+          onChange={(r) => setRange("schedule", r)}
+        />
+        <RangePair
+          label="Tempo na guilda"
+          range={filters.ranges.tenure}
+          max={24}
+          format={(v) => `${v} ${v === 1 ? "mês" : "meses"}`}
+          onChange={(r) => setRange("tenure", r)}
         />
       </fieldset>
 
@@ -113,8 +140,8 @@ export function FilterPanel({
         <Check checked={filters.onlyRecruiting} onChange={(v) => set("onlyRecruiting", v)}>
           Procurando guilda (Raider.io)
         </Check>
-        <Check checked={filters.hideAlts} onChange={(v) => set("hideAlts", v)}>
-          Esconder alts quando o main aparece
+        <Check checked={filters.groupAccounts} onChange={(v) => set("groupAccounts", v)}>
+          Agrupar personagens da mesma conta
         </Check>
       </fieldset>
 
@@ -217,5 +244,74 @@ export function ChipToggle({ pressed, onClick, children }: { pressed: boolean; o
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Faixa com mínimo e máximo numa barra só, com duas bolinhas. São dois sliders nativos sobrepostos:
+ * cada bolinha continua acessível pelo teclado e tem o próprio rótulo. Máximo no fim da escala = sem limite.
+ */
+function RangePair({
+  label,
+  range,
+  max,
+  step = 1,
+  format = String,
+  onChange,
+}: {
+  label: string;
+  range: [number, number | null] | undefined;
+  max: number;
+  step?: number;
+  format?: (v: number) => string;
+  onChange: (r: [number, number | null] | undefined) => void;
+}) {
+  const lo = range?.[0] ?? 0;
+  const hi = range?.[1] ?? max;
+  const summary =
+    lo <= 0 && hi >= max ? "qualquer" : hi >= max ? `≥ ${format(lo)}` : lo <= 0 ? `≤ ${format(hi)}` : `${format(lo)} – ${format(hi)}`;
+  const emit = (nlo: number, nhi: number) => onChange([nlo, nhi >= max ? null : nhi]);
+  // posição do centro da bolinha (16px) ao longo da barra
+  const at = (v: number) => `calc(${max ? v / max : 0} * (100% - 16px) + 8px)`;
+
+  return (
+    <div role="group" aria-label={label}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span>{label}</span>
+        <output className="tabular text-xs text-muted">{summary}</output>
+      </div>
+      <div className="dual-range mt-1">
+        <span className="dual-range-track" aria-hidden />
+        <span className="dual-range-fill" style={{ left: at(lo), width: `calc(${at(hi)} - ${at(lo)})` }} aria-hidden />
+        <input
+          type="range"
+          min={0}
+          max={max}
+          step={step}
+          value={lo}
+          aria-label={`${label}: mínimo`}
+          aria-valuetext={format(lo)}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            emit(Math.min(v, hi), hi);
+          }}
+          // com as duas bolinhas no fim da barra, a do mínimo fica por cima para continuar arrastável
+          style={{ zIndex: lo > max / 2 ? 2 : 1 }}
+        />
+        <input
+          type="range"
+          min={0}
+          max={max}
+          step={step}
+          value={hi}
+          aria-label={`${label}: máximo`}
+          aria-valuetext={hi >= max ? "sem limite" : format(hi)}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            emit(lo, Math.max(v, lo));
+          }}
+        />
+      </div>
+    </div>
   );
 }
